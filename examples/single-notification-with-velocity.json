@@ -1,0 +1,10 @@
+{
+  "id": "8b859f62-demo-single",
+  "name": "Notificación individual de prueba",
+  "key": "single_velocity_example",
+  "medium": "EMAIL",
+  "locale": "es-AR",
+  "subject": "Hola $displayName desde Cliente Anterior",
+  "body": "<html><body><h1>Hola ${displayName}</h1>#if($managerName)<p>Responsable: $managerName</p>#end<p style=\"color:#243447\">Cliente Anterior</p></body></html>",
+  "description": "Ejemplo ficticio de importación como objeto individual"
+}

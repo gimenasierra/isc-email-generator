@@ -1,0 +1,23 @@
+[
+  {
+    "id": "8b859f62-demo-0001",
+    "name": "Cuenta creada",
+    "key": "cloud_account_created",
+    "medium": "EMAIL",
+    "locale": "es",
+    "subject": "Tu cuenta en Cliente Anterior está lista, $displayName",
+    "body": "<html><body style=\"font-family:Arial;color:#243447\"><img src=\"https://old.example.com/assets/logo.png\" alt=\"Cliente Anterior\" width=\"160\"><h1>¡Hola ${displayName}!</h1>#if($managerName)<p>Tu responsable es <strong>$managerName</strong>.</p>#else<p>Tu cuenta ya se encuentra disponible.</p>#end<p><a style=\"background:#0057B8;color:#FFFFFF;padding:12px 20px\" href=\"https://old.example.com/access?identity=$identityId\">Ingresar al portal</a></p>#foreach($entitlement in $entitlements)<p>$entitlement.displayName</p>#end<p>Equipo de Cliente Anterior<br>soporte@old.example.com</p></body></html>",
+    "description": "Ejemplo ficticio con condiciones y bucles Velocity",
+    "created": "2026-01-10T12:00:00Z"
+  },
+  {
+    "id": "8b859f62-demo-0002",
+    "name": "Restablecimiento de contraseña",
+    "key": "password_reset",
+    "medium": "EMAIL",
+    "locale": "es-AR",
+    "subject": "Solicitud de contraseña — Cliente Anterior",
+    "body": "<html><body><p>Hola $identity.displayName,</p>#set($resetUrl = $baseUrl + '/reset/' + $token)<p>Usá este enlace: <a href=\"$resetUrl\">restablecer contraseña</a>.</p><p style=\"color:#243447\">Cliente Anterior</p></body></html>",
+    "description": "Ejemplo ficticio con asignación Velocity"
+  }
+]
