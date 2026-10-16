@@ -100,7 +100,7 @@ Si las instrucciones o la guía de estilo cambian después de generar, la adapta
 
 ### Guías de estilo
 
-En **Instrucciones y reglas** puede elegir **Conservar diseño actual** o **Aplicar guía de estilo**. La guía es un Markdown propio del proyecto (guardado en `backend/prompts/projects/`) que define únicamente estructura visual, jerarquía, colores y políticas editoriales: sus ejemplos no autorizan contenido de negocio, variables ni enlaces nuevos. El contrato técnico de `backend/prompts/adaptation_rules.md` siempre se aplica y ninguna guía lo reemplaza. Cambiar o eliminar una guía marca las adaptaciones existentes como desactualizadas.
+En **Instrucciones y reglas** puede elegir **Conservar diseño actual** o **Aplicar guía de estilo**. La guía es un Markdown propio del proyecto (guardado en `backend/prompts/projects/`) que define únicamente estructura visual, jerarquía, colores y políticas editoriales: sus ejemplos no autorizan contenido de negocio, variables ni enlaces nuevos. El repositorio incluye `backend/prompts/projects/default.md` como guía inicial reproducible del proyecto predeterminado; las demás guías y sus metadatos permanecen locales y fuera de Git. El contrato técnico de `backend/prompts/adaptation_rules.md` siempre se aplica y ninguna guía lo reemplaza. Cambiar o eliminar una guía marca las adaptaciones existentes como desactualizadas.
 
 ## Cargar plantillas desde SailPoint ISC
 

@@ -11,6 +11,7 @@ backend/data/*
 !backend/data/.gitkeep
 backend/prompts/projects/*
 !backend/prompts/projects/.gitkeep
+!backend/prompts/projects/default.md
 .vscode/
 *.pyc
 .run/
