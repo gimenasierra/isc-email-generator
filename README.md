@@ -2,7 +2,7 @@
 
 Aplicación web local para adaptar notificaciones de email de SailPoint ISC de un cliente a otro.
 
-Funciona en su propia PC o servidor, escucha únicamente en `127.0.0.1:8000` y no modifica nada en SailPoint salvo cuando usted confirma una publicación.
+Funciona en su propia PC o servidor, escucha únicamente en `127.0.0.1` (puerto `8000` por defecto) y no modifica nada en SailPoint salvo cuando usted confirma una publicación.
 
 ## Qué hace
 
@@ -62,6 +62,16 @@ cd ..
 
 Los eventos se registran en `logs\app.log`.
 
+Para usar otro puerto en una sesión de PowerShell, defínalo antes de iniciar. Use la misma variable al detener:
+
+```powershell
+$env:ISC_EMAIL_GENERATOR_PORT = "8010"
+.\Iniciar app.cmd
+# luego: .\Detener app.cmd
+```
+
+El valor debe ser un entero entre `1` y `65535`. La aplicación no elige automáticamente otro puerto para evitar abrir o detener una instancia equivocada.
+
 ### Linux
 
 ```bash
@@ -70,6 +80,14 @@ Los eventos se registran en `logs\app.log`.
 ```
 
 El lanzador verifica que existan el entorno virtual, el frontend compilado y las dependencias (y le indica qué comando falta si algo no está). Deja la app corriendo con `nohup`, espera hasta 40 segundos a que responda y muestra la dirección `http://127.0.0.1:8000`. El log queda en `logs/app.log`.
+
+En Linux puede elegir otro puerto para iniciar y detener la misma instancia:
+
+```bash
+export ISC_EMAIL_GENERATOR_PORT=8010
+./Iniciar\ app.sh
+# luego: ./Detener\ app.sh
+```
 
 En un servidor sin escritorio gráfico no se abre ningún navegador: use port-forwarding SSH y abra la dirección en su equipo:
 

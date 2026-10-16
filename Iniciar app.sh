@@ -3,6 +3,7 @@
 set -u
 cd "$(dirname "$0")"
 ROOT="$(pwd)"
+PORT="${ISC_EMAIL_GENERATOR_PORT:-8000}"
 PYTHON="$ROOT/backend/.venv/bin/python"
 RUNNER="$ROOT/backend/run.py"
 READY_CHECK="$ROOT/backend/check_ready.py"
@@ -50,7 +51,7 @@ APP_PID=$!
 attempts=0
 while [ "$attempts" -lt 40 ]; do
   if "$PYTHON" "$READY_CHECK" >/dev/null 2>&1; then
-    echo "ISC Email Generator esta disponible en http://127.0.0.1:8000"
+    echo "ISC Email Generator esta disponible en http://127.0.0.1:$PORT"
     exit 0
   fi
   if ! kill -0 "$APP_PID" 2>/dev/null; then

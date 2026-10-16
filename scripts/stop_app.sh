@@ -3,7 +3,19 @@
 # antes de senalar el proceso. Equivalente Linux de scripts/stop_app.ps1.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PID_FILE="$ROOT/.run/app.pid"
+PORT="${ISC_EMAIL_GENERATOR_PORT:-8000}"
+case "$PORT" in
+  ''|*[!0-9]*) echo "ISC_EMAIL_GENERATOR_PORT debe ser un numero entero entre 1 y 65535." >&2; exit 2 ;;
+esac
+if [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
+  echo "ISC_EMAIL_GENERATOR_PORT debe estar entre 1 y 65535." >&2
+  exit 2
+fi
+if [ "$PORT" -eq 8000 ]; then
+  PID_FILE="$ROOT/.run/app.pid"
+else
+  PID_FILE="$ROOT/.run/app-$PORT.pid"
+fi
 VENV_PYTHON="$ROOT/backend/.venv/bin/python"
 RUNNER="$ROOT/backend/run.py"
 
@@ -31,13 +43,13 @@ fi
 if [ "$app_pid" -eq 0 ]; then
   listener_pid=""
   if command -v ss >/dev/null 2>&1; then
-    listener_pid="$(ss -ltnpH 'sport = :8000' 2>/dev/null \
-      | grep -E '127\.0\.0\.1:8000|\[::1\]:8000|::1:8000' \
+    listener_pid="$(ss -ltnpH "sport = :$PORT" 2>/dev/null \
+      | grep -E "127\\.0\\.0\\.1:$PORT|\\[::1\\]:$PORT|::1:$PORT" \
       | head -n 1 \
       | sed -n 's/.*pid=\([0-9]\{1,\}\).*/\1/p')"
   fi
   if [ -z "$listener_pid" ] && command -v lsof >/dev/null 2>&1; then
-    listener_pid="$(lsof -nP -iTCP:8000 -sTCP:LISTEN -t 2>/dev/null | head -n 1)"
+    listener_pid="$(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -n 1)"
   fi
   if [ -z "$listener_pid" ]; then
     echo "La aplicacion ya estaba detenida."
@@ -78,7 +90,7 @@ esac
 
 if [ "$same_executable" != true ] || [ "$same_runner" != true ]; then
   if [ "$recovered_from_port" = true ]; then
-    echo "El puerto 8000 esta ocupado por otro proceso. No se finalizo ningun proceso." >&2
+    echo "El puerto $PORT esta ocupado por otro proceso. No se finalizo ningun proceso." >&2
   else
     echo "El PID pertenece a otro proceso. No se finalizo ningun proceso." >&2
   fi
