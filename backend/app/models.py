@@ -86,9 +86,23 @@ class AIConnectionTestRequest(AIConfig):
     api_key: str = ""
 
 
-class ImportRequest(BaseModel):
+class LocalImportFile(BaseModel):
     filename: str
     data: Any
+
+
+class ImportRequest(BaseModel):
+    # filename/data preserve compatibility with clients that upload one JSON.
+    filename: str = ""
+    data: Any = None
+    files: list[LocalImportFile] = Field(default_factory=list)
+    duplicate_strategy: Literal["skip", "copy"] = "skip"
+
+    @model_validator(mode="after")
+    def require_input(self):
+        if not self.files and not self.filename:
+            raise ValueError("Se debe incluir al menos un archivo JSON.")
+        return self
 
 
 ISCEnvironment = Literal["sandbox", "production", "demo"]
@@ -119,6 +133,7 @@ class TemplateSummary(BaseModel):
     config_outdated: bool = False
     unsafe_result: bool = False
     local_copy: bool = False
+    source_filename: str = ""
     provenance: dict[str, Any] | None = None
     publication_states: list[dict[str, Any]] = Field(default_factory=list)
 

@@ -1,0 +1,26 @@
+.local-import-dialog { width: min(760px, 100%); max-height: min(760px, calc(100vh - 56px)); }
+.local-import-content { min-height: 0; overflow: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 18px; }
+.local-import-content h3 { margin: 0 0 8px; font-size: 13px; color: #27374a; }
+.local-file-list, .local-duplicate-list { border: 1px solid #dce4eb; border-radius: 7px; overflow: hidden; }
+.local-file-row { min-height: 48px; padding: 9px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #e8edf1; background: #fff; }
+.local-file-row:last-child { border-bottom: 0; }
+.local-file-row.invalid { background: #fff8f8; }
+.local-file-row > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.local-file-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.local-file-row span { font-size: 10px; color: #68788a; }
+.local-file-row > span { flex: none; padding: 4px 7px; border-radius: 999px; font-weight: 700; }
+.local-duplicate-list { max-height: 180px; overflow: auto; margin-bottom: 10px; }
+.local-duplicate-list p { margin: 0; padding: 8px 11px; display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid #e8edf1; font-size: 11px; }
+.local-duplicate-list p:last-child { border-bottom: 0; }
+.local-duplicate-list span { color: #6b7888; }
+.local-import-summary { padding: 12px 14px; border-left: 4px solid var(--accent); border-radius: 0 6px 6px 0; background: #eef7fd; display: flex; flex-direction: column; gap: 3px; }
+.local-import-summary strong { font-size: 13px; }
+.local-import-summary span { color: #617185; font-size: 11px; }
+.local-import-dialog .config-footer > div { display: flex; gap: 8px; }
+
+@media (max-width: 760px) {
+  .local-import-content { padding: 16px; }
+  .local-file-row, .local-duplicate-list p { align-items: flex-start; flex-direction: column; }
+  .local-import-dialog .config-footer > div { width: 100%; }
+  .local-import-dialog .config-footer .button { flex: 1; }
+}

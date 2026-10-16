@@ -1,4 +1,4 @@
-import type { AIConfig, BrandingConfig, ISCConnection, ISCConnectionInput, ISCImportResult, ISCQueryResult, ISCTemplateType, Project, ProviderStatus, PublicationBatchPrepareItem, PublicationRecord, StyleGuide, TemplateDetail, TemplateSummary } from './types'
+import type { AIConfig, BrandingConfig, ISCConnection, ISCConnectionInput, ISCImportResult, ISCQueryResult, ISCTemplateType, LocalImportResult, Project, ProviderStatus, PublicationBatchPrepareItem, PublicationRecord, StyleGuide, TemplateDetail, TemplateSummary } from './types'
 
 type ApiOptions = RequestInit & { timeoutMs?: number }
 
@@ -82,9 +82,14 @@ async function download(url: string, filename: string): Promise<void> {
 export const api = {
   project: (projectId: string) => request<Project>(`/api/projects/${projectId}`),
   import: (projectId: string, filename: string, data: unknown) =>
-    request<{ templates: TemplateSummary[] }>(`/api/projects/${projectId}/import`, {
+    request<LocalImportResult>(`/api/projects/${projectId}/import`, {
       method: 'POST',
       body: JSON.stringify({ filename, data }),
+    }),
+  importFiles: (projectId: string, files: { filename: string; data: unknown }[], duplicateStrategy: 'skip' | 'copy') =>
+    request<LocalImportResult>(`/api/projects/${projectId}/import`, {
+      method: 'POST',
+      body: JSON.stringify({ files, duplicate_strategy: duplicateStrategy }),
     }),
   iscConnections: (projectId: string) =>
     request<{ connections: ISCConnection[] }>(`/api/projects/${projectId}/isc-connections`),

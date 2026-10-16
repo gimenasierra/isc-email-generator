@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from app.date_translation import DATE_NAME_REPLACEMENTS
 from app.main import adapt_template, clear_templates, create_isc_connection, delete_isc_connection, delete_project_style_guide, delete_template, download_result, edit_result, get_project, get_project_style_guide, get_template, import_templates, put_ai_config, put_config, put_project_style_guide, safe_download_filename, update_date_translation
-from app.models import AIConfigUpdate, AdaptRequest, BrandingConfig, DateTranslationUpdate, EditResultRequest, ImportRequest, ISCConnectionInput, StyleGuideUpdate
+from app.models import AIConfigUpdate, AdaptRequest, BrandingConfig, DateTranslationUpdate, EditResultRequest, ImportRequest, LocalImportFile, ISCConnectionInput, StyleGuideUpdate
 from app.providers.base import AdaptationResult
 from app.store import StoreError
 
@@ -92,6 +92,81 @@ def test_import_adapt_edit_download(tmp_path, monkeypatch):
     assert result["key"] == SAMPLE["key"]
     assert result["unrelatedMetadata"] == {"keep": True}
     assert result["body"] == payload["result_body"]
+
+
+def test_local_import_accumulates_single_and_multi_file_without_removing_existing(tmp_path, monkeypatch):
+    from app import store
+
+    monkeypatch.setattr(store, "DATA_DIR", tmp_path)
+    project = "local-batch"
+    first = import_templates(project, ImportRequest(filename="one.json", data=SAMPLE))
+    first_id = first["internal_ids"][0]
+    second_template = {**SAMPLE, "id": "second", "key": "second", "name": "Segunda"}
+    third_template = {**SAMPLE, "id": "third", "key": "third", "name": "Tercera"}
+    batch = import_templates(project, ImportRequest(files=[
+        LocalImportFile(filename="many.json", data=[second_template, third_template]),
+    ]))
+
+    assert batch["imported"] == 2
+    assert batch["valid_files"] == [{"filename": "many.json", "templates": 2}]
+    assert len(batch["templates"]) == 3
+    assert batch["templates"][0]["internal_id"] == first_id
+    assert {item["source_filename"] for item in batch["templates"]} == {"one.json", "many.json"}
+
+
+def test_local_import_reports_invalid_files_and_imports_valid_ones(tmp_path, monkeypatch):
+    from app import store
+
+    monkeypatch.setattr(store, "DATA_DIR", tmp_path)
+    response = import_templates("partial-batch", ImportRequest(files=[
+        LocalImportFile(filename="valid.json", data=SAMPLE),
+        LocalImportFile(filename="invalid.json", data={"name": "Sin contenido"}),
+    ]))
+
+    assert response["imported"] == 1
+    assert response["valid_files"] == [{"filename": "valid.json", "templates": 1}]
+    assert response["rejected_files"][0]["filename"] == "invalid.json"
+    assert "asunto y cuerpo" in response["rejected_files"][0]["error"]
+
+
+def test_local_import_duplicate_can_skip_or_create_independent_copy(tmp_path, monkeypatch):
+    from app import store
+
+    monkeypatch.setattr(store, "DATA_DIR", tmp_path)
+    project = "local-duplicates"
+    original = import_templates(project, ImportRequest(filename="original.json", data=SAMPLE))
+    original_id = original["internal_ids"][0]
+    saved = store.load_project(project)
+    saved["items"][0]["result"] = {**SAMPLE, "subject": "Adaptada"}
+    store.save_project(project, saved)
+
+    skipped = import_templates(project, ImportRequest(filename="duplicate.json", data={**SAMPLE, "name": "Duplicada"}))
+    assert skipped["imported"] == 0
+    assert skipped["skipped"] == 1
+    assert len(skipped["templates"]) == 1
+
+    copied = import_templates(project, ImportRequest(filename="duplicate.json", data={**SAMPLE, "name": "Duplicada"}, duplicate_strategy="copy"))
+    assert copied["imported"] == 1
+    assert copied["copied"] == 1
+    assert len(copied["templates"]) == 2
+    assert copied["templates"][0]["internal_id"] == original_id
+    assert copied["templates"][0]["has_result"] is True
+    assert copied["templates"][1]["local_copy"] is True
+
+
+def test_local_import_detects_duplicates_inside_same_batch(tmp_path, monkeypatch):
+    from app import store
+
+    monkeypatch.setattr(store, "DATA_DIR", tmp_path)
+    duplicate = {**SAMPLE, "name": "Misma identidad"}
+    skipped = import_templates("within-batch-skip", ImportRequest(filename="many.json", data=[SAMPLE, duplicate]))
+    assert skipped["imported"] == 1
+    assert skipped["skipped"] == 1
+
+    copied = import_templates("within-batch-copy", ImportRequest(filename="many.json", data=[SAMPLE, duplicate], duplicate_strategy="copy"))
+    assert copied["imported"] == 2
+    assert copied["copied"] == 1
+    assert copied["templates"][1]["local_copy"] is True
 
 
 def test_visual_edit_rejects_velocity_changes_without_saving(tmp_path, monkeypatch):
@@ -270,12 +345,10 @@ def test_rejects_unrecognized_structure(tmp_path, monkeypatch):
     from app import store
 
     monkeypatch.setattr(store, "DATA_DIR", tmp_path)
-    try:
-        import_templates("bad", ImportRequest(filename="bad.json", data={"notifications": [SAMPLE]}))
-    except StoreError as exc:
-        assert "campos de asunto y cuerpo" in str(exc)
-    else:
-        raise AssertionError("La estructura no reconocida debería rechazarse")
+    response = import_templates("bad", ImportRequest(filename="bad.json", data={"notifications": [SAMPLE]}))
+    assert response["imported"] == 0
+    assert response["rejected_files"][0]["filename"] == "bad.json"
+    assert "campos de asunto y cuerpo" in response["rejected_files"][0]["error"]
 
 
 def test_isc_candidate_list_filters_non_email_media_locally(monkeypatch):

@@ -98,7 +98,7 @@ ssh -L 8000:127.0.0.1:8000 usuario@servidor
 
 ## Cómo usar la app
 
-1. Cargue `examples/notifications-with-velocity.json` o pulse **Cargar desde ISC**.
+1. Cargue uno o varios archivos JSON, o pulse **Cargar desde ISC**. Cada archivo puede contener una única notificación o un array de notificaciones.
 2. Menú del engranaje → **Instrucciones y reglas**: indique idioma de destino, branding, colores o mapeos, y guárdelos.
 3. **Configuración de IA**: elija proveedor y modelo, guarde y pruebe la conexión (o deje el proveedor simulado si no quiere usar IA).
 4. Filtre y seleccione una notificación en el panel izquierdo.
@@ -108,6 +108,10 @@ ssh -L 8000:127.0.0.1:8000 usuario@servidor
 8. Descargue el JSON adaptado, o prepárelo para publicarlo en ISC.
 
 Si las instrucciones o la guía de estilo cambian después de generar, la adaptación queda marcada como desactualizada: no se regenera ni se sobrescribe sola.
+
+### Carga de archivos JSON locales
+
+La carga local es acumulativa: agregar otro archivo no borra las notificaciones que ya están en el panel. Antes de confirmar se muestran los archivos válidos, los rechazados y las coincidencias por `key + medium + locale`. Si hay duplicados, puede omitirlos o importarlos como **Copia local** independiente. Un archivo inválido se rechaza completo, pero no impide cargar los demás archivos válidos seleccionados al mismo tiempo.
 
 ### Protecciones de la edición
 
