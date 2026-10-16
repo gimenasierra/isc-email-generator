@@ -1,10 +1,23 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_APP_PORT = 8000
+
+
+def app_port() -> int:
+    raw_value = os.getenv("ISC_EMAIL_GENERATOR_PORT", str(DEFAULT_APP_PORT)).strip()
+    try:
+        port = int(raw_value)
+    except ValueError as exc:
+        raise ValueError("ISC_EMAIL_GENERATOR_PORT debe ser un número entero entre 1 y 65535.") from exc
+    if not 1 <= port <= 65535:
+        raise ValueError("ISC_EMAIL_GENERATOR_PORT debe estar entre 1 y 65535.")
+    return port
 
 
 def runtime_signature() -> str:

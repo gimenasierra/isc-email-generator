@@ -24,14 +24,22 @@ BACKEND_DIR = ROOT / "backend"
 FRONTEND_INDEX = ROOT / "frontend" / "dist" / "index.html"
 RUN_DIR = ROOT / ".run"
 LOG_DIR = ROOT / "logs"
-PID_FILE = RUN_DIR / "app.pid"
 LOG_FILE = LOG_DIR / "app.log"
-APP_URL = "http://127.0.0.1:8000"
-HEALTH_URL = f"{APP_URL}/api/health"
 STOP_SCRIPT_POWERSHELL = ROOT / "scripts" / "stop_app.ps1"
 STOP_SCRIPT_SHELL = ROOT / "scripts" / "stop_app.sh"
 sys.path.insert(0, str(BACKEND_DIR))
-from app.runtime import runtime_signature
+from app.runtime import DEFAULT_APP_PORT, app_port, runtime_signature
+
+
+try:
+    APP_PORT = app_port()
+except ValueError as exc:
+    print(f"ERROR: {exc}", file=sys.stderr)
+    raise SystemExit(2) from exc
+
+PID_FILE = RUN_DIR / ("app.pid" if APP_PORT == DEFAULT_APP_PORT else f"app-{APP_PORT}.pid")
+APP_URL = f"http://127.0.0.1:{APP_PORT}"
+HEALTH_URL = f"{APP_URL}/api/health"
 
 
 EXPECTED_RUNTIME_SIGNATURE = runtime_signature()
@@ -81,7 +89,7 @@ def stop_outdated_instance() -> bool:
         if not app_is_ready():
             return True
         time.sleep(0.25)
-    print("ERROR: la instancia anterior no liberó el puerto 8000.", file=sys.stderr)
+    print(f"ERROR: la instancia anterior no liberó el puerto {APP_PORT}.", file=sys.stderr)
     return False
 
 
@@ -151,7 +159,7 @@ def main() -> int:
         uvicorn.run(
             "app.main:app",
             host="127.0.0.1",
-            port=8000,
+            port=APP_PORT,
             log_config=logging_config(),
             access_log=True,
         )

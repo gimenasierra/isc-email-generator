@@ -5,7 +5,15 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 $OutputEncoding = $utf8
 
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
-$pidFile = Join-Path $root '.run\app.pid'
+$port = 8000
+if ($env:ISC_EMAIL_GENERATOR_PORT) {
+    if (-not [int]::TryParse($env:ISC_EMAIL_GENERATOR_PORT, [ref]$port) -or $port -lt 1 -or $port -gt 65535) {
+        Write-Host 'ISC_EMAIL_GENERATOR_PORT debe ser un número entero entre 1 y 65535.' -ForegroundColor Red
+        exit 2
+    }
+}
+$pidName = if ($port -eq 8000) { 'app.pid' } else { "app-$port.pid" }
+$pidFile = Join-Path $root ".run\$pidName"
 $pythonPath = Join-Path $root 'backend\.venv\Scripts\python.exe'
 $runnerPath = Join-Path $root 'backend\run.py'
 
@@ -28,7 +36,7 @@ if ($appPid -gt 0) {
 }
 
 if ($appPid -eq 0) {
-    $listener = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
+    $listener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
         Where-Object { $_.LocalAddress -in @('127.0.0.1', '::1') } |
         Select-Object -First 1
     if (-not $listener) {
@@ -57,7 +65,7 @@ $sameRunner = $process.CommandLine -and ($process.CommandLine.IndexOf($expectedR
 
 if (-not ($sameExecutable -and $sameRunner)) {
     if ($recoveredFromPort) {
-        Write-Host 'El puerto 8000 está ocupado por otro proceso. No se finalizó ningún proceso.' -ForegroundColor Red
+        Write-Host "El puerto $port está ocupado por otro proceso. No se finalizó ningún proceso." -ForegroundColor Red
     } else {
         Write-Host 'El PID pertenece a otro proceso. No se finalizó ningún proceso.' -ForegroundColor Red
     }
