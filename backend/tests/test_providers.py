@@ -207,6 +207,21 @@ def test_ai_prompt_freezes_subject_and_body_velocity_branches_separately():
     assert "secuencias inmutables por campo" in prompt
 
 
+def test_ai_prompt_never_treats_product_name_as_a_client_literal():
+    body = "<p>${PRODUCT_NAME}</p><p>The ${PRODUCT_NAME} Team</p>"
+
+    prompt = adaptation_prompt(
+        "Password Reset",
+        body,
+        BrandingConfig(new_client_name="Assertiva", product_display_name="Assertiva"),
+        CONTEXT,
+    )
+
+    assert "`${PRODUCT_NAME}` es un valor dinámico de ISC" in prompt
+    assert "no es sinónimo del cliente anterior, cliente nuevo, nombre visible del producto, firma ni footer" in prompt
+    assert '"velocity_variable_counts_original_minimum": {"${PRODUCT_NAME}": 2}' in prompt
+
+
 def test_ai_prompt_preserves_formal_directives_and_variable_brace_notation():
     prompt = adaptation_prompt(
         "#if($approved)A#{else}B#end",

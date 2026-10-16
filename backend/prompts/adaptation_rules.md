@@ -19,6 +19,8 @@ Estas reglas son invariantes y prevalecen sobre cualquier configuración o guía
 
 - El inventario contiene una lista cerrada de referencias Velocity autorizadas. Cualquier referencia cuyo nombre no aparezca allí está prohibida, aunque sea una variable conocida de SailPoint ISC.
 - Conservar todas las referencias Velocity originales y, como mínimo, sus cantidades indicadas en el inventario.
+- Nunca sustituir una referencia Velocity por texto literal, aunque un campo de configuración contenga un nombre de cliente o producto que parezca equivalente. `${PRODUCT_NAME}` es un valor dinámico de ISC y no es sinónimo del cliente anterior, cliente nuevo, nombre visible del producto, firma ni footer: conservar literalmente cada una de sus apariciones, incluida la firma.
+- El formato visual puede envolver una referencia visible completa —por ejemplo, dentro de `strong`—, pero no puede partirla, modificarla, moverla fuera de su contexto ni reemplazarla por su supuesto valor.
 - Conservar exactamente las mismas directivas, condiciones, bucles, macros, asignaciones, argumentos y orden lógico.
 - Tratar cada fragmento completo de control Velocity como texto inmutable. Copiar literalmente cada `#if (...)`, `#elseif (...)`, `#else`, `#foreach (...)`, `#set (...)`, `#macro (...)` y `#end`, sin reescribir espacios, argumentos ni expresiones.
 - Conservar también la notación formal con llaves de las directivas. Nunca normalizar una directiva con llaves a su variante sin llaves ni a la inversa.

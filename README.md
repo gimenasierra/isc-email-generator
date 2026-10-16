@@ -93,6 +93,7 @@ Si las instrucciones o la guía de estilo cambian después de generar, la adapta
 ### Protecciones de la edición
 
 - Solo se modifican asunto y cuerpo; `name`, `key`, `locale` y los demás metadatos nunca cambian.
+- Las referencias Velocity nunca se sustituyen por nombres literales aunque parezcan equivalentes; en particular, `${PRODUCT_NAME}` se conserva como valor dinámico de ISC incluso dentro de la firma.
 - El modo **Visual** permite texto, negrita, cursiva, tamaño, colores, alineación y la URL de enlaces existentes. Las variables y directivas de Velocity se muestran como etiquetas azules bloqueadas; si el backend detecta que una edición alteró esa lógica, responde con un error sin sobrescribir la adaptación.
 - Si el contenido contiene scripts, iframes u otros elementos inseguros, el modo visual se deshabilita y hay que editar en modo **HTML**.
 - La vista previa se muestra en un `iframe` aislado que elimina scripts; no ejecuta Velocity ni garantiza el render final de Outlook o Gmail.
