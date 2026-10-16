@@ -28,7 +28,8 @@ PID_FILE = RUN_DIR / "app.pid"
 LOG_FILE = LOG_DIR / "app.log"
 APP_URL = "http://127.0.0.1:8000"
 HEALTH_URL = f"{APP_URL}/api/health"
-STOP_SCRIPT = ROOT / "scripts" / "stop_app.ps1"
+STOP_SCRIPT_POWERSHELL = ROOT / "scripts" / "stop_app.ps1"
+STOP_SCRIPT_SHELL = ROOT / "scripts" / "stop_app.sh"
 sys.path.insert(0, str(BACKEND_DIR))
 from app.runtime import runtime_signature
 
@@ -52,22 +53,29 @@ def app_is_ready(timeout: float = 0.75) -> bool:
 
 def stop_outdated_instance() -> bool:
     print("Se detectó una versión anterior en ejecución. Actualizando la instancia local...")
-    completed = subprocess.run(
-        [
+    if os.name == "nt":
+        command = [
             "powershell.exe",
             "-NoProfile",
             "-NonInteractive",
             "-ExecutionPolicy",
             "Bypass",
             "-File",
-            str(STOP_SCRIPT),
-        ],
-        cwd=ROOT,
-        check=False,
-    )
+            str(STOP_SCRIPT_POWERSHELL),
+        ]
+        stop_hint = ROOT / "Detener app.cmd"
+    else:
+        command = ["bash", str(STOP_SCRIPT_SHELL)]
+        stop_hint = ROOT / "Detener app.sh"
+    try:
+        completed = subprocess.run(command, cwd=ROOT, check=False)
+    except OSError as exc:
+        print(f"ERROR: no se pudo ejecutar el detenedor ({exc}).", file=sys.stderr)
+        print(f"Ejecute manualmente {stop_hint} y vuelva a iniciar la aplicación.", file=sys.stderr)
+        return False
     if completed.returncode != 0:
         print("ERROR: no se pudo detener de forma segura la instancia anterior.", file=sys.stderr)
-        print(f"Ejecute {ROOT / 'Detener app.cmd'} y vuelva a iniciar la aplicación.", file=sys.stderr)
+        print(f"Ejecute {stop_hint} y vuelva a iniciar la aplicación.", file=sys.stderr)
         return False
     for _ in range(40):
         if not app_is_ready():
@@ -122,8 +130,9 @@ def main() -> int:
     if not FRONTEND_INDEX.exists():
         print("ERROR: el frontend no está compilado.", file=sys.stderr)
         print(f"Abra una terminal en {ROOT / 'frontend'} y ejecute:", file=sys.stderr)
-        print("  npm.cmd install", file=sys.stderr)
-        print("  npm.cmd run build", file=sys.stderr)
+        npm = "npm.cmd" if os.name == "nt" else "npm"
+        print(f"  {npm} install", file=sys.stderr)
+        print(f"  {npm} run build", file=sys.stderr)
         return 3
 
     try:

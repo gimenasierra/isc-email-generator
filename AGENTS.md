@@ -33,7 +33,7 @@ Este repositorio contiene una aplicación local para adaptar notificaciones expo
 - Frontend: React, TypeScript y Vite en `frontend/`.
 - Backend: FastAPI en `backend/`.
 - En uso normal, FastAPI sirve `frontend/dist`; Vite queda reservado para desarrollo.
-- El inicio de Windows usa `backend/.venv` sin activación manual y escucha solo en localhost.
+- El inicio usa `backend/.venv` sin activación manual y escucha solo en localhost: en Windows con `Iniciar app.cmd`/`Detener app.cmd` y `scripts/stop_app.ps1`; en Linux con `Iniciar app.sh`/`Detener app.sh` y `scripts/stop_app.sh`, que comparten `backend/run.py`.
 - Persistencia local: JSON por proyecto bajo `backend/data/` (ignorado por Git).
 - Ejecutar los checks del frontend y las pruebas del backend antes de entregar cambios.
 - Actualizar `README.md` cuando cambien comandos, configuración o comportamiento observable.

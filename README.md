@@ -18,6 +18,24 @@ Haga doble clic en **`Iniciar app.cmd`**. El lanzador:
 
 Puede cerrar la ventana del lanzador después de que se abra el navegador; FastAPI continúa en segundo plano. Para detener solamente esa instancia, haga doble clic en **`Detener app.cmd`**. El detenedor valida el PID —o recupera el proceso exacto por el puerto local cuando falta el PID—, el ejecutable del entorno virtual y `backend\run.py`; no finaliza otros procesos de Python.
 
+## En Linux
+
+La lógica de la aplicación es multiproplataforma; solo los lanzadores difieren. Desde la raíz del proyecto clonado:
+
+```bash
+# Preparación (una sola vez)
+python3 -m venv backend/.venv
+backend/.venv/bin/pip install -r backend/requirements.txt
+# Solo si no copió frontend/dist desde otro equipo, con Node.js 20+:
+(cd frontend && npm install && npm run build)
+
+# Uso normal
+./Iniciar app.sh    # levanta FastAPI en segundo plano y abre el navegador si hay escritorio
+./Detener app.sh    # detiene solo esta instancia, tras validar PID, python del .venv y run.py
+```
+
+`run.py` es el mismo de Windows: escribe `logs/app.log`, usa `.run/app.pid` y escucha solo en `127.0.0.1:8000`. En un servidor sin escritorio no se abre navegador: acceda con port-forwarding SSH (`ssh -L 8000:127.0.0.1:8000 usuario@servidor`) y abra `http://127.0.0.1:8000` localmente. `truststore` usa en Linux el bundle del sistema (`/etc/ssl/certs`), por lo que los certificados raíz administrados por TI se respetan si están instalados allí.
+
 ## Preparación inicial o reparación
 
 El arranque normal no instala ni compila dependencias. La forma más simple es ejecutar **`Preparar entorno.cmd`** una sola vez: crea `backend\.venv`, instala las dependencias y, si hace falta, compila el frontend (requiere Node.js 20 o superior solo en ese caso).
@@ -47,19 +65,30 @@ Para compartir la aplicación sin instalar herramientas de desarrollo en el dest
 2. Se genera `dist\isc-email-generator.zip` con el backend, el frontend compilado, los lanzadores y esta documentación. El ZIP **no** incluye `.venv`, `.env`, datos locales ni `node_modules`.
 3. En la PC destino (solo requiere Windows y Python 3.11+): descomprima, ejecute **`Preparar entorno.cmd`** una vez y luego **`Iniciar app.cmd`**.
 
-Cada usuario configura sus propias conexiones ISC y claves de IA desde la interfaz; esas credenciales se guardan en su `backend\.env` local y nunca se distribuyen.
+Cada usuario configura sus propias conexiones ISC y claves de IA desde la interfaz; esas credenciales se guardan en su `backend\.env` local y nunca se distribuyen. Para Linux no hay ZIP: clone el repositorio (o copie el proyecto) y siga la sección **En Linux**.
 
 ## Modo de desarrollo
 
-Para conservar recarga automática del frontend, use dos terminales solamente durante desarrollo:
+Para conservar recarga automática del frontend, use dos terminales solamente durante desarrollo. El primer comando debe ejecutarse desde `backend/` para que Python encuentre el paquete `app`:
 
 ```powershell
-# Terminal 1, desde la raíz
-backend\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+# Terminal 1
+cd backend
+.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
 
 # Terminal 2
 cd frontend
 npm.cmd run dev
+```
+
+En Linux:
+
+```bash
+# Terminal 1
+cd backend && .venv/bin/python -m uvicorn app.main:app --reload --port 8000
+
+# Terminal 2
+cd frontend && npm run dev
 ```
 
 Abra [http://localhost:5173](http://localhost:5173). Vite redirige `/api` a FastAPI. El inicio normal usa [http://localhost:8000](http://localhost:8000) y sirve el build desde FastAPI.
@@ -230,6 +259,8 @@ npm.cmd run test
 npm.cmd run typecheck
 npm.cmd run build
 ```
+
+En Linux, use `.venv/bin/python` en lugar de `.venv\Scripts\python.exe` y `npm` en lugar de `npm.cmd`.
 
 ## Estructura extensible
 
