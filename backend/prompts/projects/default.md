@@ -31,7 +31,7 @@ Traducir por significado, no palabra por palabra. Se puede reordenar únicamente
 - Para introducir una fecha traducida, preferir “Le informamos que el día [FECHA]…” o una construcción natural equivalente. Evitar “El [FECHA]…”.
 - Omitir calcos redundantes de `now` o `currently` cuando el presente verbal ya expresa actualidad.
 - Preferir “El sistema se encuentra procesando la solicitud” o “El sistema está procesando la solicitud”, sin agregar “ahora”.
-- Los bloques deterministas de traducción de fecha ya vienen preparados por la aplicación: conservarlos literalmente y adaptar solo el texto visible que los rodea.
+- No crear bloques Velocity para traducir fechas. La aplicación ofrece esa transformación como un postproceso separado después de la adaptación.
 
 ## 4. Paleta
 

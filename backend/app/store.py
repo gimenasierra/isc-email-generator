@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .date_translation import canonicalize_generated_date_blocks
+from .date_translation import SUPPORTED_DATE_VARIABLES, canonicalize_generated_date_blocks
 from .models import AIConfig, BrandingConfig, TemplateSummary
 from .prompt_rules import get_style_guide
 from .velocity import validate_velocity
@@ -75,6 +75,7 @@ def load_project(project_id: str) -> dict[str, Any]:
                 )
         item.setdefault("adaptation_baseline", None)
         item.setdefault("protected_velocity_blocks", [])
+        item.setdefault("date_translation", None)
         if isinstance(item.get("validation"), dict):
             item["validation"].setdefault("repeated_variables", [])
             item["validation"].setdefault("directive_order_changed", False)
@@ -139,6 +140,7 @@ def make_items(templates: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "adaptation_config_signature": None,
             "adaptation_baseline": None,
             "protected_velocity_blocks": [],
+            "date_translation": None,
             "publication_preparation": None,
             "publication_backups": [],
             "publication_history": [],
@@ -268,6 +270,7 @@ def import_isc_templates(
                     "adaptation_config_signature": None,
                     "adaptation_baseline": None,
                     "protected_velocity_blocks": [],
+                    "date_translation": None,
                     "publication_preparation": None,
                     "publication_backups": [],
                     "publication_history": [],
@@ -290,6 +293,7 @@ def import_isc_templates(
                 adaptation_config_signature=None,
                 adaptation_baseline=None,
                 protected_velocity_blocks=[],
+                date_translation=None,
                 publication_preparation=None,
                 provenance=source,
                 local_copy=False,
@@ -306,6 +310,7 @@ def import_isc_templates(
             "adaptation_config_signature": None,
             "adaptation_baseline": None,
             "protected_velocity_blocks": [],
+            "date_translation": None,
             "publication_preparation": None,
             "publication_backups": [],
             "publication_history": [],
@@ -342,7 +347,7 @@ def editable_content(template: dict[str, Any]) -> tuple[str, str, str, str]:
 
 def _migrate_saved_date_blocks(project: dict[str, Any]) -> bool:
     """Canonicalize only generated blocks in saved adaptations, never originals."""
-    variables = list(project.get("config", {}).get("spanish_date_variables") or [])
+    variables = list(SUPPORTED_DATE_VARIABLES)
     changed = False
     for item in project.get("items", []):
         baseline = item.get("adaptation_baseline")
@@ -376,6 +381,11 @@ def _migrate_saved_date_blocks(project: dict[str, Any]) -> bool:
         baseline["body"] = migrated_baseline.body
         result[body_field] = migrated_result.body
         item["protected_velocity_blocks"] = list(migrated_baseline.protected_blocks)
+        item["date_translation"] = {
+            "applied": True,
+            "removable": False,
+            "variables": list(migrated_result.transformed_variables),
+        }
         baseline_subject = str(baseline.get("subject", result_subject))
         item["validation"] = validate_velocity(
             baseline_subject + "\n" + migrated_baseline.body,

@@ -36,7 +36,7 @@ Estas reglas son invariantes y prevalecen sobre cualquier configuración o guía
 - Se puede repetir una variable ya presente cuando sea necesario para mostrar el mismo valor en un botón y en un enlace alternativo o texto de respaldo.
 - Una repetición autorizada es solamente de presentación: no puede introducir nuevas condiciones, bucles, asignaciones, destinos ni lógica de negocio.
 - Nunca usar una repetición como autorización para crear otra variable, combinarla con una ruta inventada o cambiar el significado del enlace original.
-- Excepción controlada: el inventario puede incluir bloques de traducción de fecha generados por la aplicación. Esos bloques ya forman parte del cuerpo base autorizado y deben conservarse completos, literales, en la misma posición y sin modificaciones. En ellos, la variable original sin llaves (`$expires`, `$dateRequested`, `$startDate` o `$removeDate`) es exclusivamente la fuente de la cadena `.replace(...)`, y la variable descriptiva entre llaves (`${fechaExpiracionEs}` o su equivalente inventariado) es exclusivamente el valor mostrado. No intercambiar ambas formas, reconstruir el bloque ni crear otros bloques semejantes.
+- La traducción determinista de fechas se aplica después de la adaptación. No crear, reconstruir ni agregar bloques Velocity con cadenas `.replace(...)` para traducir fechas.
 
 ## Reglas de adaptación
 

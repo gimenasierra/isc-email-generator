@@ -138,6 +138,11 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ subject, body, editor_mode: editorMode }),
     }),
+  updateDateTranslation: (projectId: string, internalId: string, enabled: boolean) =>
+    request<TemplateDetail>(`/api/projects/${projectId}/templates/${internalId}/date-translation`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    }),
   preparePublicationBatch: (projectId: string, connectionId: string, internalIds: string[]) =>
     request<{ connection: ISCConnection; items: PublicationBatchPrepareItem[] }>(`/api/projects/${projectId}/publication/batches/prepare`, { method: 'POST', body: JSON.stringify({ connection_id: connectionId, internal_ids: internalIds }) }),
   publishPreparedBatch: (projectId: string, connectionId: string, items: Array<{ internal_id: string; preparation_id: string }>) =>

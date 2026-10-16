@@ -29,7 +29,6 @@ export type BrandingConfig = {
   url_mappings: MappingEntry[]
   additional_instructions: string
   mode: 'preserve' | 'guide'
-  spanish_date_variables: string[]
 }
 
 export type StyleGuide = {
@@ -132,6 +131,13 @@ export type TemplateDetail = {
   result_body: string | null
   validation: Validation | null
   protected_velocity_blocks: string[]
+  date_translation: {
+    applied: boolean
+    removable: boolean
+    variables: string[]
+    available_variables: string[]
+    language_supported: boolean
+  }
   actions: string[]
   config_outdated: boolean
   provenance?: ISCProvenance | null

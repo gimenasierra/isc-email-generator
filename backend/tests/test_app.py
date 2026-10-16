@@ -6,8 +6,8 @@ import pytest
 from fastapi import HTTPException
 
 from app.date_translation import DATE_NAME_REPLACEMENTS
-from app.main import adapt_template, clear_templates, create_isc_connection, delete_isc_connection, delete_project_style_guide, delete_template, download_result, edit_result, get_project, get_project_style_guide, get_template, import_templates, put_ai_config, put_config, put_project_style_guide, safe_download_filename
-from app.models import AIConfigUpdate, AdaptRequest, BrandingConfig, EditResultRequest, ImportRequest, ISCConnectionInput, StyleGuideUpdate
+from app.main import adapt_template, clear_templates, create_isc_connection, delete_isc_connection, delete_project_style_guide, delete_template, download_result, edit_result, get_project, get_project_style_guide, get_template, import_templates, put_ai_config, put_config, put_project_style_guide, safe_download_filename, update_date_translation
+from app.models import AIConfigUpdate, AdaptRequest, BrandingConfig, DateTranslationUpdate, EditResultRequest, ImportRequest, ISCConnectionInput, StyleGuideUpdate
 from app.providers.base import AdaptationResult
 from app.store import StoreError
 
@@ -172,12 +172,19 @@ def test_date_baseline_is_stored_and_modified_block_blocks_download(tmp_path, mo
     }
     imported = import_templates(project, ImportRequest(filename="date.json", data=template))
     internal_id = imported["templates"][0]["internal_id"]
-    put_config(project, BrandingConfig(target_language="Español", spanish_date_variables=["expires"]))
+    put_config(project, BrandingConfig(target_language="Español"))
 
     adapted = adapt_template(project, AdaptRequest(internal_id=internal_id))
-    assert ".replace(\"Thursday\", \"jueves\")" in adapted["result_body"]
+    assert ".replace(\"Thursday\", \"jueves\")" not in adapted["result_body"]
+    assert adapted["date_translation"]["applied"] is False
+    assert adapted["date_translation"]["available_variables"] == ["expires"]
+
+    translated = update_date_translation(project, internal_id, DateTranslationUpdate(enabled=True))
+    assert ".replace(\"Thursday\", \"jueves\")" in translated["result_body"]
+    assert translated["date_translation"]["applied"] is True
+    assert translated["date_translation"]["removable"] is True
     saved_item = store.load_project(project)["items"][0]
-    assert saved_item["adaptation_baseline"]["body"] == adapted["result_body"]
+    assert saved_item["adaptation_baseline"]["body"] == translated["result_body"]
     assert len(saved_item["protected_velocity_blocks"]) == 1
 
     damaged = adapted["result_body"].replace('.replace("October", "octubre")', "")
@@ -189,6 +196,26 @@ def test_date_baseline_is_stored_and_modified_block_blocks_download(tmp_path, mo
     assert edited["validation"]["modified_protected_blocks"] == ["Bloque de traducción determinista 1"]
     with pytest.raises(HTTPException, match="descarga está bloqueada"):
         download_result(project, internal_id)
+
+
+def test_date_translation_can_be_removed_without_losing_surrounding_edits(tmp_path, monkeypatch):
+    from app import store
+
+    monkeypatch.setattr(store, "DATA_DIR", tmp_path)
+    project = "date-removal"
+    template = {**SAMPLE, "body": "<p>Expires: ${expires}</p><p>Fallback: ${expires}</p>"}
+    internal_id = import_templates(project, ImportRequest(filename="date.json", data=template))["templates"][0]["internal_id"]
+    put_config(project, BrandingConfig(target_language="Español"))
+    adapt_template(project, AdaptRequest(internal_id=internal_id))
+    translated = update_date_translation(project, internal_id, DateTranslationUpdate(enabled=True))
+    assert translated["result_body"].count("#set($fechaExpiracionEs") == 2
+    edited_body = translated["result_body"].replace("Expires:", "Vence:")
+    edit_result(project, internal_id, EditResultRequest(subject=translated["result_subject"], body=edited_body))
+
+    restored = update_date_translation(project, internal_id, DateTranslationUpdate(enabled=False))
+    assert restored["result_body"] == "<p>Vence: ${expires}</p><p>Fallback: ${expires}</p>"
+    assert restored["protected_velocity_blocks"] == []
+    assert restored["date_translation"]["applied"] is False
 
 
 def test_load_migrates_saved_legacy_date_blocks_without_touching_original(tmp_path, monkeypatch):

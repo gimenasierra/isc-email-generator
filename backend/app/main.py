@@ -14,9 +14,9 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .isc import ISCError, isc_client, normalize_api_base_url, utc_now_iso
-from .date_translation import prepare_spanish_date_body
+from .date_translation import SUPPORTED_DATE_VARIABLES, is_spanish, prepare_spanish_date_body, restore_spanish_date_body
 from .isc_secrets import ISCSecretError, credential_status, delete_credentials, set_credentials
-from .models import AIConfig, AIConfigUpdate, AIConnectionTestRequest, AdaptRequest, BrandingConfig, EditResultRequest, ImportRequest, ISCConnectionInput, ISCImportRequest, PublicationBatchConfirmRequest, PublicationBatchPrepareRequest, PublicationConfirmRequest, PublicationPrepareRequest, PublicationVerifyRequest, StyleGuideUpdate
+from .models import AIConfig, AIConfigUpdate, AIConnectionTestRequest, AdaptRequest, BrandingConfig, DateTranslationUpdate, EditResultRequest, ImportRequest, ISCConnectionInput, ISCImportRequest, PublicationBatchConfirmRequest, PublicationBatchPrepareRequest, PublicationConfirmRequest, PublicationPrepareRequest, PublicationVerifyRequest, StyleGuideUpdate
 from .prompt_rules import PromptRulesError, delete_style_guide, get_style_guide, save_style_guide
 from .publication import prepare_item, publish_prepared, reverify_publication
 from .providers.base import ProviderError
@@ -407,6 +407,36 @@ def test_ai_connection(project_id: str, request: AIConnectionTestRequest):
     return {"status": "connected", "message": result.message, "provider": ai_status(project_id, settings)}
 
 
+def date_translation_state(item: dict, config: BrandingConfig) -> dict:
+    result = item.get("result")
+    language_supported = is_spanish(config.target_language)
+    record = item.get("date_translation") if isinstance(item.get("date_translation"), dict) else {}
+    applied = bool(item.get("protected_velocity_blocks")) or bool(record.get("applied"))
+    available: list[str] = []
+    variables = [str(value) for value in record.get("variables", []) if value in SUPPORTED_DATE_VARIABLES]
+    if isinstance(result, dict) and language_supported:
+        try:
+            _, _, _, result_body = editable_content(result)
+            inspected = prepare_spanish_date_body(
+                result_body,
+                list(SUPPORTED_DATE_VARIABLES),
+                config.target_language,
+            )
+            if applied and not variables:
+                variables = list(inspected.transformed_variables)
+            elif not applied:
+                available = list(inspected.transformed_variables)
+        except StoreError:
+            pass
+    return {
+        "applied": applied,
+        "removable": bool(record.get("removable")) if applied else False,
+        "variables": variables,
+        "available_variables": available,
+        "language_supported": language_supported,
+    }
+
+
 @app.get("/api/projects/{project_id}/templates/{internal_id}")
 def get_template(project_id: str, internal_id: str):
     project = load_project(project_id)
@@ -425,6 +455,7 @@ def get_template(project_id: str, internal_id: str):
         "result_body": result_body,
         "validation": item.get("validation"),
         "protected_velocity_blocks": item.get("protected_velocity_blocks", []),
+        "date_translation": date_translation_state(item, BrandingConfig.model_validate(project["config"])),
         "actions": item.get("actions", []),
         "provenance": item.get("provenance"),
         "config_outdated": is_config_outdated(item, project["config"], project["ai_config"], project_style_hash(project)),
@@ -469,18 +500,16 @@ def adapt_template(project_id: str, request: AdaptRequest):
     selected_provider = provider_for(ai_config)
     subject_field, body_field, subject, body = editable_content(item["original"])
     api_key = api_key_for(project_id, ai_config.provider)
-    prepared = prepare_spanish_date_body(body, config.spanish_date_variables, config.target_language)
     context = TemplateContext(
         name=str(item["original"].get("name", item["original"].get("displayName", ""))),
         key=str(item["original"].get("key", "")),
         locale=str(item["original"].get("locale", "")),
         project_id=project_id,
-        protected_velocity_blocks=prepared.protected_blocks,
     )
     try:
         adaptation = selected_provider.adapt(
             subject,
-            prepared.body,
+            body,
             config,
             ai_config,
             api_key,
@@ -490,10 +519,10 @@ def adapt_template(project_id: str, request: AdaptRequest):
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     validation, unsafe_changes = validate_ai_adaptation(
         subject,
-        prepared.body,
+        body,
         adaptation,
         config.old_client_name,
-        prepared.protected_blocks,
+        (),
     )
     if unsafe_changes:
         raise HTTPException(
@@ -509,15 +538,11 @@ def adapt_template(project_id: str, request: AdaptRequest):
     result[body_field] = adaptation.body
     item["result"] = result
     item["validation"] = validation.model_dump()
-    item["adaptation_baseline"] = {"subject": subject, "body": prepared.body}
-    item["protected_velocity_blocks"] = list(prepared.protected_blocks)
+    item["adaptation_baseline"] = {"subject": subject, "body": body}
+    item["protected_velocity_blocks"] = []
+    item["date_translation"] = None
     item["actions"] = [
         f"Proveedor: {selected_provider.name} ({ai_config.model or 'sin modelo'})",
-        *(
-            ["Fechas traducidas de forma determinista: " + ", ".join(prepared.transformed_variables)]
-            if prepared.transformed_variables
-            else []
-        ),
         *adaptation.changes,
     ]
     item["adaptation_config_signature"] = adaptation_signature(project["config"], project["ai_config"], project_style_hash(project))
@@ -563,6 +588,95 @@ def edit_result(project_id: str, internal_id: str, request: EditResultRequest):
     item["result"][subject_field] = request.subject
     item["result"][body_field] = request.body
     item["validation"] = validation
+    item["publication_preparation"] = None
+    save_project(project_id, project)
+    return get_template(project_id, internal_id)
+
+
+@app.put("/api/projects/{project_id}/templates/{internal_id}/date-translation")
+def update_date_translation(project_id: str, internal_id: str, request: DateTranslationUpdate):
+    project = load_project(project_id)
+    item = get_item(project, internal_id)
+    if not item.get("result"):
+        raise HTTPException(status_code=409, detail="Primero generá una adaptación.")
+    config = BrandingConfig.model_validate(project["config"])
+    if not is_spanish(config.target_language):
+        raise HTTPException(status_code=409, detail="La traducción determinista de fechas solo está disponible cuando el idioma de destino es español.")
+
+    _, body_field, original_subject, original_body = editable_content(item["original"])
+    _, _, result_subject, result_body = editable_content(item["result"])
+    baseline = item.get("adaptation_baseline") or {"subject": original_subject, "body": original_body}
+    record = item.get("date_translation") if isinstance(item.get("date_translation"), dict) else {}
+
+    if request.enabled:
+        current_validation = item.get("validation") or {}
+        unsafe_fields = (
+            "missing_variables",
+            "added_variables",
+            "missing_directives",
+            "added_directives",
+            "directive_order_changed",
+            "modified_protected_blocks",
+        )
+        if any(current_validation.get(field) for field in unsafe_fields):
+            raise HTTPException(status_code=409, detail="Corregí primero los cambios inseguros de Velocity de la adaptación.")
+        if item.get("protected_velocity_blocks") or record.get("applied"):
+            return get_template(project_id, internal_id)
+        variables = list(SUPPORTED_DATE_VARIABLES)
+        prepared_result = prepare_spanish_date_body(result_body, variables, config.target_language)
+        if not prepared_result.replacements:
+            raise HTTPException(status_code=409, detail="La adaptación no contiene fechas visibles compatibles para traducir.")
+        # La adaptación ya fue validada contra el original. Para proteger todas las
+        # apariciones visibles —incluidas repeticiones autorizadas—, el estado seguro
+        # inmediatamente anterior al postproceso pasa a ser la línea base editable.
+        previous_baseline = deepcopy(baseline)
+        prepared_baseline = prepare_spanish_date_body(result_body, variables, config.target_language)
+        validation = validate_velocity(
+            result_subject + "\n" + prepared_baseline.body,
+            result_subject + "\n" + prepared_result.body,
+            config.old_client_name,
+            prepared_baseline.protected_blocks,
+        )
+        if unsafe_velocity_changes(validation):
+            raise HTTPException(status_code=409, detail="No se pudo aplicar la traducción sin alterar la validación de Velocity.")
+        baseline = {"subject": result_subject, "body": prepared_baseline.body}
+        item["result"][body_field] = prepared_result.body
+        item["protected_velocity_blocks"] = list(prepared_baseline.protected_blocks)
+        item["date_translation"] = {
+            "applied": True,
+            "removable": True,
+            "variables": list(prepared_result.transformed_variables),
+            "result_replacements": [replacement.__dict__ for replacement in prepared_result.replacements],
+            "previous_baseline": previous_baseline,
+        }
+        item["validation"] = validation.model_dump()
+        action = "Fechas traducidas de forma determinista: " + ", ".join(prepared_result.transformed_variables)
+        item["actions"] = [entry for entry in item.get("actions", []) if not entry.startswith("Fechas traducidas de forma determinista:")]
+        item["actions"].append(action)
+    else:
+        if not record.get("applied"):
+            return get_template(project_id, internal_id)
+        if not record.get("removable"):
+            raise HTTPException(status_code=409, detail="Esta adaptación usa bloques de fecha anteriores que no pueden quitarse automáticamente.")
+        try:
+            restored_result = restore_spanish_date_body(result_body, list(record.get("result_replacements") or []))
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        previous_baseline = record.get("previous_baseline") if isinstance(record.get("previous_baseline"), dict) else None
+        restored_baseline = previous_baseline or {"subject": original_subject, "body": original_body}
+        validation = validate_velocity(
+            str(restored_baseline.get("subject", original_subject)) + "\n" + str(restored_baseline.get("body", original_body)),
+            result_subject + "\n" + restored_result,
+            config.old_client_name,
+        )
+        baseline = restored_baseline
+        item["result"][body_field] = restored_result
+        item["protected_velocity_blocks"] = []
+        item["date_translation"] = None
+        item["validation"] = validation.model_dump()
+        item["actions"] = [entry for entry in item.get("actions", []) if not entry.startswith("Fechas traducidas de forma determinista:")]
+
+    item["adaptation_baseline"] = baseline
     item["publication_preparation"] = None
     save_project(project_id, project)
     return get_template(project_id, internal_id)

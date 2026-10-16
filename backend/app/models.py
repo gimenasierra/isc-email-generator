@@ -11,9 +11,6 @@ class MappingEntry(BaseModel):
     target: str = ""
 
 
-SUPPORTED_SPANISH_DATE_VARIABLES = ("expires", "dateRequested", "startDate", "removeDate")
-
-
 class BrandingConfig(BaseModel):
     target_language: str = "Español neutro"
     generate_missing_title: bool = True
@@ -31,25 +28,6 @@ class BrandingConfig(BaseModel):
     url_mappings: list[MappingEntry] = Field(default_factory=list)
     additional_instructions: str = ""
     mode: Literal["preserve", "guide"] = "preserve"
-    spanish_date_variables: list[str] = Field(
-        default_factory=lambda: ["expires", "dateRequested", "startDate", "removeDate"]
-    )
-
-    @field_validator("spanish_date_variables")
-    @classmethod
-    def validate_spanish_date_variables(cls, values: list[str]) -> list[str]:
-        normalized: list[str] = []
-        for raw_value in values:
-            value = raw_value.strip()
-            if value not in SUPPORTED_SPANISH_DATE_VARIABLES:
-                raise ValueError(
-                    "Solo se admiten las variables de fecha validadas: "
-                    + ", ".join(SUPPORTED_SPANISH_DATE_VARIABLES)
-                    + "."
-                )
-            if value not in normalized:
-                normalized.append(value)
-        return normalized
 
     @model_validator(mode="before")
     @classmethod
@@ -172,6 +150,10 @@ class EditResultRequest(BaseModel):
     subject: str
     body: str
     editor_mode: Literal["visual", "html"] = "html"
+
+
+class DateTranslationUpdate(BaseModel):
+    enabled: bool
 
 
 class PublicationPrepareRequest(BaseModel):

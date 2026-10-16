@@ -86,9 +86,10 @@ ssh -L 8000:127.0.0.1:8000 usuario@servidor
 4. Filtre y seleccione una notificación en el panel izquierdo.
 5. Genere la adaptación desde la barra de acciones.
 6. Compare original y adaptación; edite en modo **Visual** o **HTML** y revise validaciones y referencias pendientes.
-7. Descargue el JSON adaptado, o prepárelo para publicarlo en ISC.
+7. Si la plantilla contiene una fecha compatible, use **Traducir fechas** para convertir sus días y meses después de la adaptación, sin volver a llamar a la IA.
+8. Descargue el JSON adaptado, o prepárelo para publicarlo en ISC.
 
-Si las instrucciones o la guía de estilo cambian después de generar, la adaptación queda marcada como desactualizada: no se regenera ni se sobrescribe sola. En **Instrucciones y reglas** también se habilitan las cuatro variables de fecha válidas en ISC (`expires`, `dateRequested`, `startDate` y `removeDate`); no se admiten nombres arbitrarios.
+Si las instrucciones o la guía de estilo cambian después de generar, la adaptación queda marcada como desactualizada: no se regenera ni se sobrescribe sola.
 
 ### Protecciones de la edición
 
@@ -97,7 +98,7 @@ Si las instrucciones o la guía de estilo cambian después de generar, la adapta
 - El modo **Visual** permite texto, negrita, cursiva, tamaño, colores, alineación y la URL de enlaces existentes. Las variables y directivas de Velocity se muestran como etiquetas azules bloqueadas; si el backend detecta que una edición alteró esa lógica, responde con un error sin sobrescribir la adaptación.
 - Si el contenido contiene scripts, iframes u otros elementos inseguros, el modo visual se deshabilita y hay que editar en modo **HTML**.
 - La vista previa se muestra en un `iframe` aislado que elimina scripts; no ejecuta Velocity ni garantiza el render final de Outlook o Gmail.
-- Cuando el destino es español, el backend inserta junto a cada fecha visible un bloque Velocity determinista que traduce día y mes conservando número, año, hora y GMT (por ejemplo, `Thursday 15 October 2026 (18:10:38 GMT)` → `jueves 15 octubre 2026 (18:10:38 GMT)`). Una edición manual que rompa esos bloques aparece en **Validación** y bloquea descarga y publicación hasta corregirla.
+- Cuando el destino es español, **Traducir fechas** detecta las referencias validadas `expires`, `dateRequested`, `startDate`, `removeDate`, `detail.startDate` y `detail.removeDate`. Las dos últimas se admiten específicamente dentro de los detalles iterados de solicitudes de acceso; no se generaliza la transformación a otras propiedades anidadas. La acción inserta después de la adaptación un bloque Velocity determinista que traduce días y meses completos o abreviados, conservando número, año, hora y zona horaria (por ejemplo, `Thursday 15 October 2026 (18:10:38 GMT)` → `jueves 15 octubre 2026 (18:10:38 GMT)` y `Fri Oct 23 03:00:00 UTC 2026` → `viernes octubre 23 03:00:00 UTC 2026`). La IA no recibe ni genera esos bloques. La acción se puede revertir con **Quitar traducción de fechas**; una edición manual que rompa un bloque protegido aparece en **Validación** y bloquea descarga y publicación hasta corregirla.
 
 ### Guías de estilo
 

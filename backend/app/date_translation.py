@@ -6,7 +6,7 @@ import re
 from .velocity import DIRECTIVE_RE, VARIABLE_RE, extract_velocity
 
 
-DATE_NAME_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+FULL_DATE_NAME_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("Monday", "lunes"),
     ("Tuesday", "martes"),
     ("Wednesday", "miércoles"),
@@ -28,11 +28,37 @@ DATE_NAME_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("December", "diciembre"),
 )
 
+ABBREVIATED_DATE_NAME_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("Mon", "lunes"),
+    ("Tue", "martes"),
+    ("Wed", "miércoles"),
+    ("Thu", "jueves"),
+    ("Fri", "viernes"),
+    ("Sat", "sábado"),
+    ("Sun", "domingo"),
+    ("Jan", "enero"),
+    ("Feb", "febrero"),
+    ("Mar", "marzo"),
+    ("Apr", "abril"),
+    # May ya está incluido en la lista de nombres completos.
+    ("Jun", "junio"),
+    ("Jul", "julio"),
+    ("Aug", "agosto"),
+    ("Sep", "septiembre"),
+    ("Oct", "octubre"),
+    ("Nov", "noviembre"),
+    ("Dec", "diciembre"),
+)
+
+DATE_NAME_REPLACEMENTS = FULL_DATE_NAME_REPLACEMENTS + ABBREVIATED_DATE_NAME_REPLACEMENTS
+
 SUPPORTED_DATE_VARIABLES: dict[str, str] = {
     "expires": "fechaExpiracionEs",
     "dateRequested": "fechaSolicitudEs",
     "startDate": "fechaInicioEs",
     "removeDate": "fechaFinEs",
+    "detail.startDate": "fechaInicioEs",
+    "detail.removeDate": "fechaFinEs",
 }
 
 HTML_TAG_RE = re.compile(r"<[^>]*>", re.DOTALL)
@@ -47,6 +73,14 @@ class PreparedDateBody:
     body: str
     protected_blocks: tuple[str, ...]
     transformed_variables: tuple[str, ...]
+    replacements: tuple["DateBlockReplacement", ...] = ()
+
+
+@dataclass(frozen=True)
+class DateBlockReplacement:
+    variable: str
+    source: str
+    block: str
 
 
 def is_spanish(language: str) -> bool:
@@ -54,13 +88,17 @@ def is_spanish(language: str) -> bool:
     return normalized == "es" or "español" in normalized or "espanol" in normalized or "spanish" in normalized
 
 
-def _protected_spans(text: str) -> list[tuple[int, int]]:
+def _reference_name(reference: str) -> str:
+    return reference.lstrip("$!{").rstrip("}")
+
+
+def _protected_spans(text: str, selected: list[str]) -> list[tuple[int, int]]:
     spans = [(match.start(), match.end()) for match in DIRECTIVE_RE.finditer(text)]
     spans.extend((match.start(), match.end()) for match in HTML_TAG_RE.finditer(text))
     spans.extend((match.start(), match.end()) for match in NON_VISIBLE_HTML_RE.finditer(text))
     for match in VARIABLE_RE.finditer(text):
         reference = match.group(0)
-        if "." in reference or "[" in reference or "(" in reference:
+        if ("." in reference or "[" in reference or "(" in reference) and _reference_name(reference) not in selected:
             spans.append((match.start(), match.end()))
     return sorted(spans)
 
@@ -80,10 +118,14 @@ def _translated_name(text: str, variable: str, reserved: set[str]) -> str:
     return candidate
 
 
-def _translation_expression(variable: str, braced: bool = False) -> str:
+def _translation_expression(
+    variable: str,
+    braced: bool = False,
+    replacements: tuple[tuple[str, str], ...] = DATE_NAME_REPLACEMENTS,
+) -> str:
     # ISC acepta llamadas de método sobre `$expires`, pero no sobre `${expires}`.
     expression = f"${{{variable}}}" if braced else f"${variable}"
-    for english, spanish in DATE_NAME_REPLACEMENTS:
+    for english, spanish in replacements:
         expression += f'.replace("{english}", "{spanish}")'
     return expression
 
@@ -94,11 +136,18 @@ def _block(variable: str, translated_name: str) -> str:
 
 def _generated_block_pattern(variable: str) -> re.Pattern[str]:
     translated_base = re.escape(SUPPORTED_DATE_VARIABLES[variable])
-    target = rf"(?P<target>(?:__iscgen_es_{re.escape(variable)}(?:_[0-9]+)*|{translated_base}(?:_[0-9]+)?))"
+    legacy_variable = re.escape(variable.replace(".", "_"))
+    target = rf"(?P<target>(?:__iscgen_es_{legacy_variable}(?:_[0-9]+)*|{translated_base}(?:_[0-9]+)?))"
     unbraced = re.escape(_translation_expression(variable))
     legacy_braced = re.escape(_translation_expression(variable, braced=True))
+    legacy_full_unbraced = re.escape(
+        _translation_expression(variable, replacements=FULL_DATE_NAME_REPLACEMENTS)
+    )
+    legacy_full_braced = re.escape(
+        _translation_expression(variable, braced=True, replacements=FULL_DATE_NAME_REPLACEMENTS)
+    )
     return re.compile(
-        rf"#set\(\${target}\s*=\s*(?:{unbraced}|{legacy_braced})\)\$\{{(?P=target)\}}"
+        rf"#set\(\${target}\s*=\s*(?:{unbraced}|{legacy_braced}|{legacy_full_unbraced}|{legacy_full_braced})\)\$\{{(?P=target)\}}"
     )
 
 
@@ -159,7 +208,7 @@ def prepare_spanish_date_body(body: str, variables: list[str], language: str) ->
         generated_spans.extend(
             (match.start(), match.end()) for match in _generated_block_pattern(variable).finditer(working_body)
         )
-    protected_spans = [*_protected_spans(working_body), *generated_spans]
+    protected_spans = [*_protected_spans(working_body, selected), *generated_spans]
     matches: list[tuple[int, int, str]] = []
     for variable in selected:
         pattern = re.compile(
@@ -179,12 +228,15 @@ def prepare_spanish_date_body(body: str, variables: list[str], language: str) ->
     }
     chunks: list[str] = []
     transformed = list(canonical.transformed_variables)
+    replacements: list[DateBlockReplacement] = []
     cursor = 0
     for start, end, variable in matches:
         block = _block(variable, _translated_name(working_body, variable, reserved))
+        source = working_body[start:end]
         chunks.extend((working_body[cursor:start], block))
         cursor = end
         transformed.append(variable)
+        replacements.append(DateBlockReplacement(variable=variable, source=source, block=block))
     chunks.append(working_body[cursor:])
     prepared_body = "".join(chunks)
 
@@ -198,4 +250,17 @@ def prepare_spanish_date_body(body: str, variables: list[str], language: str) ->
         body=prepared_body,
         protected_blocks=tuple(block for _, block in all_blocks),
         transformed_variables=tuple(dict.fromkeys(transformed)),
+        replacements=tuple(replacements),
     )
+
+
+def restore_spanish_date_body(body: str, replacements: list[dict[str, str]]) -> str:
+    """Remove exact blocks emitted by the postprocessor while preserving surrounding edits."""
+    restored = body
+    for replacement in replacements:
+        block = str(replacement.get("block", ""))
+        source = str(replacement.get("source", ""))
+        if not block or not source or restored.count(block) != 1:
+            raise ValueError("No se puede quitar la traducción porque un bloque de fecha fue modificado o eliminado.")
+        restored = restored.replace(block, source, 1)
+    return restored

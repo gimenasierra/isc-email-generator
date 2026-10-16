@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import pytest
-
 from app.date_translation import (
+    ABBREVIATED_DATE_NAME_REPLACEMENTS,
     DATE_NAME_REPLACEMENTS,
+    FULL_DATE_NAME_REPLACEMENTS,
     canonicalize_generated_date_blocks,
     prepare_spanish_date_body,
+    restore_spanish_date_body,
 )
 from app.models import BrandingConfig
 from app.providers.base import TemplateContext
@@ -13,10 +14,10 @@ from app.providers.remote import adaptation_prompt
 from app.velocity import validate_velocity
 
 
-def replacement_chain(source: str) -> str:
+def replacement_chain(source: str, replacements=DATE_NAME_REPLACEMENTS) -> str:
     return source + "".join(
         f'.replace("{english}", "{spanish}")'
-        for english, spanish in DATE_NAME_REPLACEMENTS
+        for english, spanish in replacements
     )
 
 
@@ -32,8 +33,9 @@ def test_password_reset_code_uses_unbraced_source_and_descriptive_output() -> No
     assert "${expires}.replace" not in prepared.body
 
 
-def test_translates_all_seven_days_and_twelve_months_without_changing_time() -> None:
-    assert len(DATE_NAME_REPLACEMENTS) == 19
+def test_translates_full_and_abbreviated_date_names_without_changing_time() -> None:
+    assert len(FULL_DATE_NAME_REPLACEMENTS) == 19
+    assert len(ABBREVIATED_DATE_NAME_REPLACEMENTS) == 18
     prepared = prepare_spanish_date_body("<p>$expires</p>", ["expires"], "Español neutro")
     block = prepared.protected_blocks[0]
     for english, spanish in DATE_NAME_REPLACEMENTS:
@@ -43,6 +45,11 @@ def test_translates_all_seven_days_and_twelve_months_without_changing_time() -> 
     for english, spanish in DATE_NAME_REPLACEMENTS:
         value = value.replace(english, spanish)
     assert value == "jueves 15 octubre 2026 (18:10:38 GMT)"
+
+    abbreviated = "Fri Oct 23 03:00:00 UTC 2026"
+    for english, spanish in DATE_NAME_REPLACEMENTS:
+        abbreviated = abbreviated.replace(english, spanish)
+    assert abbreviated == "viernes octubre 23 03:00:00 UTC 2026"
 
 
 def test_prepares_only_the_four_validated_variables_inside_original_branches() -> None:
@@ -89,6 +96,27 @@ def test_skips_attributes_nested_references_directives_and_existing_calls() -> N
     assert "const value = '$expires'" in prepared.body
 
 
+def test_translates_only_the_validated_detail_dates_inside_their_branches() -> None:
+    body = (
+        "#foreach($detail in $requestedObjectDetailsByType.get($type))"
+        "<p>$detail.name "
+        "#if($detail.startDate)Start: ${detail.startDate}#end "
+        "#if($detail.removeDate)End: ${detail.removeDate}#end"
+        "</p>#end"
+    )
+    prepared = prepare_spanish_date_body(
+        body,
+        ["detail.startDate", "detail.removeDate"],
+        "Español",
+    )
+    assert "#if($detail.startDate)Start: #set($fechaInicioEs = $detail.startDate.replace" in prepared.body
+    assert "#if($detail.removeDate)End: #set($fechaFinEs = $detail.removeDate.replace" in prepared.body
+    assert "${fechaInicioEs}#end" in prepared.body
+    assert "${fechaFinEs}#end" in prepared.body
+    assert "$detail.name" in prepared.body
+    assert len(prepared.protected_blocks) == 2
+
+
 def test_uses_safe_suffix_when_descriptive_name_already_exists() -> None:
     body = "$fechaExpiracionEs <p>$expires</p>"
     prepared = prepare_spanish_date_body(body, ["expires"], "Spanish")
@@ -98,7 +126,7 @@ def test_uses_safe_suffix_when_descriptive_name_already_exists() -> None:
 
 def test_migrates_legacy_braced_block_and_is_idempotent() -> None:
     legacy_name = "__iscgen_es_expires_1"
-    legacy = f"#set(${legacy_name} = {replacement_chain('${expires}')})${{{legacy_name}}}"
+    legacy = f"#set(${legacy_name} = {replacement_chain('${expires}', FULL_DATE_NAME_REPLACEMENTS)})${{{legacy_name}}}"
     body = f"<p>{legacy}</p>"
     first = prepare_spanish_date_body(body, ["expires"], "Español")
     second = prepare_spanish_date_body(first.body, ["expires"], "Español")
@@ -108,6 +136,22 @@ def test_migrates_legacy_braced_block_and_is_idempotent() -> None:
     assert second.body == first.body
     assert second.protected_blocks == first.protected_blocks
     assert second.body.count("#set($fechaExpiracionEs = ") == 1
+
+
+def test_migrates_existing_nested_date_block_to_include_abbreviations() -> None:
+    legacy = (
+        "#set($fechaFinEs = "
+        + replacement_chain("$detail.removeDate", FULL_DATE_NAME_REPLACEMENTS)
+        + ")${fechaFinEs}"
+    )
+    prepared = prepare_spanish_date_body(
+        f"#if($detail.removeDate)<p>{legacy}</p>#end",
+        ["detail.removeDate"],
+        "Español",
+    )
+    assert prepared.body.count("#set($fechaFinEs = ") == 1
+    assert '.replace("Fri", "viernes")' in prepared.body
+    assert '.replace("Oct", "octubre")' in prepared.body
 
 
 def test_canonicalizer_does_not_transform_raw_references_or_unrelated_sets() -> None:
@@ -125,19 +169,27 @@ def test_non_spanish_language_does_not_prepare_dates() -> None:
     assert prepared.protected_blocks == ()
 
 
-def test_prompt_contains_exact_protected_block_and_explains_source_and_output() -> None:
-    prepared = prepare_spanish_date_body("<p>$expires</p>", ["expires"], "Español")
+def test_records_exact_replacements_and_restores_original_notation() -> None:
+    original = "<p>Expira: ${expires}</p>"
+    prepared = prepare_spanish_date_body(original, ["expires"], "Español")
+    assert prepared.replacements[0].source == "${expires}"
+    assert prepared.replacements[0].block == prepared.protected_blocks[0]
+    restored = restore_spanish_date_body(
+        prepared.body,
+        [replacement.__dict__ for replacement in prepared.replacements],
+    )
+    assert restored == original
+
+
+def test_ai_prompt_receives_the_original_date_reference_without_postprocessing() -> None:
     prompt = adaptation_prompt(
         "Aviso",
-        prepared.body,
+        "<p>Expires: $expires</p>",
         BrandingConfig(target_language="Español"),
-        TemplateContext("Aviso", "key", "en", protected_velocity_blocks=prepared.protected_blocks),
+        TemplateContext("Aviso", "key", "en"),
     )
-    assert "CUERPO BASE PREPARADO POR LA APLICACIÓN" in prompt
-    assert prepared.protected_blocks[0] in prompt
-    assert "protected_velocity_blocks_verbatim" in prompt
-    assert "referencia original sin llaves" in prompt
-    assert "variable descriptiva entre llaves" in prompt
+    assert "<p>Expires: $expires</p>" in prompt
+    assert "fechaExpiracionEs" not in prompt
 
 
 def test_validation_rejects_a_modified_or_missing_protected_block() -> None:
@@ -149,12 +201,3 @@ def test_validation_rejects_a_modified_or_missing_protected_block() -> None:
     changed = validate_velocity(prepared.body, changed_body, protected_blocks=prepared.protected_blocks)
     assert changed.modified_protected_blocks == ["Bloque de traducción determinista 1"]
     assert changed.suspicious is True
-
-
-def test_date_variable_configuration_accepts_only_validated_names() -> None:
-    config = BrandingConfig(spanish_date_variables=["expires", "expires", "startDate"])
-    assert config.spanish_date_variables == ["expires", "startDate"]
-
-    for invalid in ("$expires", "detail.removeDate", "customDate", "expires.replace()"):
-        with pytest.raises(ValueError):
-            BrandingConfig(spanish_date_variables=[invalid])
