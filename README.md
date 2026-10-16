@@ -1,8 +1,10 @@
 # ISC Email Generator
 
-Aplicación web local para adaptar notificaciones de email de SailPoint ISC de un cliente a otro.
+Aplicación web local para adaptar notificaciones de email de SailPoint ISC para reutilizarlas con otro branding, otro idioma o la configuración por defecto del proyecto. Ajusta asunto, cuerpo HTML y estilo mediante un modelo de IA o sustitución directa de valores y conserva intactos los metadatos y toda la sintaxis Apache Velocity.
 
-Funciona en su propia PC o servidor, escucha únicamente en `127.0.0.1` (puerto `8000` por defecto) y no modifica nada en SailPoint salvo cuando usted confirma una publicación.
+Funciona en su propia PC o servidor, escucha únicamente en `127.0.0.1` (puerto `8000` por defecto) y no modifica nada en SailPoint salvo cuando se publica una notificación en ISC.
+
+<img width="1911" height="901" alt="image" src="https://github.com/user-attachments/assets/fb44b8b7-d579-43c5-bab7-8217a445fc8b" />
 
 ## Qué hace
 
