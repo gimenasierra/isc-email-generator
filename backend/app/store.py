@@ -149,6 +149,76 @@ def make_items(templates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _next_item_number(project: dict[str, Any]) -> int:
+    return max(
+        (int(match.group(1)) for item in project["items"] if (match := re.fullmatch(r"template-(\d+)", item["internal_id"]))),
+        default=0,
+    ) + 1
+
+
+def _new_item(template: dict[str, Any], internal_id: str, *, source_filename: str = "", local_copy: bool = False, provenance: dict[str, Any] | None = None) -> dict[str, Any]:
+    item = {
+        "internal_id": internal_id,
+        "original": deepcopy(template),
+        "result": None,
+        "validation": None,
+        "actions": [],
+        "adaptation_config_signature": None,
+        "adaptation_baseline": None,
+        "protected_velocity_blocks": [],
+        "date_translation": None,
+        "publication_preparation": None,
+        "publication_backups": [],
+        "publication_history": [],
+    }
+    if source_filename:
+        item["source_filename"] = source_filename
+    if local_copy:
+        item["local_copy"] = True
+    if provenance is not None:
+        item["provenance"] = provenance
+    return item
+
+
+def import_local_templates(
+    project: dict[str, Any],
+    files: list[tuple[str, list[dict[str, Any]]]],
+    duplicate_strategy: str,
+) -> dict[str, Any]:
+    """Append validated local templates while preserving every existing item."""
+    existing_by_identity: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for item in project["items"]:
+        existing_by_identity.setdefault(template_identity(item["original"]), []).append(item)
+    next_number = _next_item_number(project)
+    imported_ids: list[str] = []
+    skipped = copied = 0
+    for filename, templates in files:
+        for template in templates:
+            identity = template_identity(template)
+            duplicate = bool(existing_by_identity.get(identity))
+            if duplicate and duplicate_strategy == "skip":
+                skipped += 1
+                continue
+            item = _new_item(
+                template,
+                f"template-{next_number}",
+                source_filename=filename,
+                local_copy=duplicate,
+            )
+            next_number += 1
+            project["items"].append(item)
+            existing_by_identity.setdefault(identity, []).append(item)
+            imported_ids.append(item["internal_id"])
+            if duplicate:
+                copied += 1
+    return {
+        "imported": len(imported_ids),
+        "skipped": skipped,
+        "copied": copied,
+        "internal_ids": imported_ids,
+    }
+
+
 def config_signature(config: dict[str, Any]) -> str:
     canonical = json.dumps(config, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -222,6 +292,7 @@ def summary(item: dict[str, Any], config: dict[str, Any], ai_config: dict[str, A
         config_outdated=is_config_outdated(item, config, ai_config, style_guide_hash),
         unsafe_result=unsafe_result,
         local_copy=bool(item.get("local_copy")),
+        source_filename=str(item.get("source_filename", "")),
         provenance=item.get("provenance"),
         publication_states=publication_states,
     )
@@ -245,10 +316,7 @@ def import_isc_templates(
     existing_by_identity: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     for item in project["items"]:
         existing_by_identity.setdefault(template_identity(item["original"]), []).append(item)
-    next_number = max(
-        (int(match.group(1)) for item in project["items"] if (match := re.fullmatch(r"template-(\d+)", item["internal_id"]))),
-        default=0,
-    ) + 1
+    next_number = _next_item_number(project)
     imported_ids: list[str] = []
     skipped = replaced = copied = adaptations_removed = 0
     for template in templates:
@@ -261,22 +329,7 @@ def import_isc_templates(
                 skipped += 1
                 continue
             if duplicate_strategy == "copy":
-                item = {
-                    "internal_id": f"template-{next_number}",
-                    "original": deepcopy(template),
-                    "result": None,
-                    "validation": None,
-                    "actions": [],
-                    "adaptation_config_signature": None,
-                    "adaptation_baseline": None,
-                    "protected_velocity_blocks": [],
-                    "date_translation": None,
-                    "publication_preparation": None,
-                    "publication_backups": [],
-                    "publication_history": [],
-                    "provenance": source,
-                    "local_copy": True,
-                }
+                item = _new_item(template, f"template-{next_number}", local_copy=True, provenance=source)
                 next_number += 1
                 project["items"].append(item)
                 existing_by_identity[identity].append(item)
@@ -301,21 +354,7 @@ def import_isc_templates(
             imported_ids.append(existing["internal_id"])
             replaced += 1
             continue
-        item = {
-            "internal_id": f"template-{next_number}",
-            "original": deepcopy(template),
-            "result": None,
-            "validation": None,
-            "actions": [],
-            "adaptation_config_signature": None,
-            "adaptation_baseline": None,
-            "protected_velocity_blocks": [],
-            "date_translation": None,
-            "publication_preparation": None,
-            "publication_backups": [],
-            "publication_history": [],
-            "provenance": source,
-        }
+        item = _new_item(template, f"template-{next_number}", provenance=source)
         next_number += 1
         project["items"].append(item)
         existing_by_identity.setdefault(identity, []).append(item)

@@ -50,8 +50,19 @@ export type TemplateSummary = {
   config_outdated: boolean
   unsafe_result: boolean
   local_copy: boolean
+  source_filename: string
   provenance?: ISCProvenance | null
   publication_states: PublicationStateSummary[]
+}
+
+export type LocalImportResult = {
+  imported: number
+  skipped: number
+  copied: number
+  internal_ids: string[]
+  valid_files: { filename: string; templates: number }[]
+  rejected_files: { filename: string; error: string }[]
+  templates: TemplateSummary[]
 }
 
 export type ISCEnvironment = 'sandbox' | 'production' | 'demo'

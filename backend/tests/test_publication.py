@@ -381,7 +381,7 @@ def test_batch_blocks_two_local_copies_for_the_same_isc_destination(tmp_path, mo
 
     monkeypatch.setattr(store, "DATA_DIR", tmp_path)
     original = item()["original"]
-    imported = import_templates("duplicates", ImportRequest(filename="duplicates.json", data=[original, {**original, "name": "Copia local"}]))
+    imported = import_templates("duplicates", ImportRequest(filename="duplicates.json", data=[original, {**original, "name": "Copia local"}], duplicate_strategy="copy"))
     for summary in imported["templates"]:
         adapt_template("duplicates", AdaptRequest(internal_id=summary["internal_id"]))
 

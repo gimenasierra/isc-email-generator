@@ -28,9 +28,9 @@ from .store import (
     editable_content,
     get_item,
     inspect_import,
+    import_local_templates,
     import_isc_templates,
     load_project,
-    make_items,
     save_project,
     summary,
     template_identity,
@@ -328,12 +328,28 @@ def import_from_isc(project_id: str, connection_id: str, request: ISCImportReque
 
 @app.post("/api/projects/{project_id}/import")
 def import_templates(project_id: str, request: ImportRequest):
-    templates = inspect_import(request.data)
     project = load_project(project_id)
-    project["filename"] = request.filename
-    project["items"] = make_items(templates)
+    requested_files = [(entry.filename, entry.data) for entry in request.files]
+    if not requested_files:
+        requested_files = [(request.filename, request.data)]
+    valid_files: list[tuple[str, list[dict]]] = []
+    rejected_files: list[dict[str, str]] = []
+    for filename, data in requested_files:
+        try:
+            valid_files.append((filename, inspect_import(data)))
+        except StoreError as exc:
+            rejected_files.append({"filename": filename, "error": str(exc)})
+    result = import_local_templates(project, valid_files, request.duplicate_strategy)
+    if valid_files:
+        names = [filename for filename, _ in valid_files]
+        project["filename"] = names[0] if len(names) == 1 else f"{len(names)} archivos JSON"
     save_project(project_id, project)
-    return {"templates": [summary(item, project["config"], project["ai_config"], project_style_hash(project)).model_dump() for item in project["items"]]}
+    return {
+        **result,
+        "valid_files": [{"filename": filename, "templates": len(templates)} for filename, templates in valid_files],
+        "rejected_files": rejected_files,
+        "templates": [summary(item, project["config"], project["ai_config"], project_style_hash(project)).model_dump() for item in project["items"]],
+    }
 
 
 @app.put("/api/projects/{project_id}/config")
