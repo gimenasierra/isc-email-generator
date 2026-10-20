@@ -1,8 +1,9 @@
 @echo off
 setlocal
 chcp 65001 >nul
-cd /d "%~dp0"
 title Detener ISC Email Generator
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%CD%\scripts\stop_app.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\stop_app.ps1"
+set "APP_EXIT=%ERRORLEVEL%"
 echo.
-pause
+if not "%ISC_EMAIL_GENERATOR_NONINTERACTIVE%"=="1" pause
+exit /b %APP_EXIT%

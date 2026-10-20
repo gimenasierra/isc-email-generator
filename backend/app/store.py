@@ -10,11 +10,12 @@ from typing import Any
 
 from .date_translation import SUPPORTED_DATE_VARIABLES, canonicalize_generated_date_blocks
 from .models import AIConfig, BrandingConfig, TemplateSummary
+from .paths import BACKEND_DIR, state_path
 from .prompt_rules import get_style_guide
 from .velocity import validate_velocity
 
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR = state_path("data", development_default=BACKEND_DIR / "data")
 SUBJECT_FIELDS = ("subject", "emailSubject", "title")
 BODY_FIELDS = ("body", "emailBody", "content", "message")
 

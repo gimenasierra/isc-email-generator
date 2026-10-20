@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -28,6 +29,7 @@ LOG_FILE = LOG_DIR / "app.log"
 STOP_SCRIPT_POWERSHELL = ROOT / "scripts" / "stop_app.ps1"
 STOP_SCRIPT_SHELL = ROOT / "scripts" / "stop_app.sh"
 sys.path.insert(0, str(BACKEND_DIR))
+from app.paths import state_path
 from app.runtime import DEFAULT_APP_PORT, app_port, runtime_signature
 
 
@@ -37,6 +39,9 @@ except ValueError as exc:
     print(f"ERROR: {exc}", file=sys.stderr)
     raise SystemExit(2) from exc
 
+RUN_DIR = state_path(".run", development_default=RUN_DIR)
+LOG_DIR = state_path("logs", development_default=LOG_DIR)
+LOG_FILE = LOG_DIR / "app.log"
 PID_FILE = RUN_DIR / ("app.pid" if APP_PORT == DEFAULT_APP_PORT else f"app-{APP_PORT}.pid")
 APP_URL = f"http://127.0.0.1:{APP_PORT}"
 HEALTH_URL = f"{APP_URL}/api/health"
@@ -57,6 +62,15 @@ def app_status(timeout: float = 0.75) -> tuple[bool, str]:
 
 def app_is_ready(timeout: float = 0.75) -> bool:
     return app_status(timeout)[0]
+
+
+def app_port_is_available() -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", APP_PORT))
+        return True
+    except OSError:
+        return False
 
 
 def stop_outdated_instance() -> bool:
@@ -97,7 +111,8 @@ def open_browser_when_ready() -> None:
     for _ in range(120):
         if app_is_ready():
             print(f"Aplicación disponible en {APP_URL}")
-            webbrowser.open(APP_URL)
+            if os.getenv("ISC_EMAIL_GENERATOR_NO_BROWSER", "").strip() != "1":
+                webbrowser.open(APP_URL)
             return
         time.sleep(0.25)
     print(f"No se pudo confirmar el inicio. Revise {LOG_FILE}", file=sys.stderr)
@@ -134,6 +149,14 @@ def main() -> int:
             return 0
         if not stop_outdated_instance():
             return 5
+
+    if not app_port_is_available():
+        print(
+            f"ERROR: el puerto {APP_PORT} ya está ocupado por otro proceso. "
+            "Detenga ese proceso o defina ISC_EMAIL_GENERATOR_PORT con otro puerto.",
+            file=sys.stderr,
+        )
+        return 4
 
     if not FRONTEND_INDEX.exists():
         print("ERROR: el frontend no está compilado.", file=sys.stderr)

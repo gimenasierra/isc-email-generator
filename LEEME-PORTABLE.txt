@@ -1,0 +1,33 @@
+ISC Email Generator - Windows x64 portable
+============================================
+
+Uso
+---
+1. Extraiga todo el ZIP en una carpeta local. No ejecute archivos dentro del ZIP.
+2. Haga doble clic en "Iniciar app.cmd".
+3. Espere a que se abra http://127.0.0.1:8000 en el navegador.
+4. Para cerrar el servidor, ejecute "Detener app.cmd".
+
+No se necesitan Python, Node.js, Rust, instalación ni permisos de administrador.
+No mueva ni elimine archivos internos de la carpeta extraída.
+
+Datos locales
+-------------
+Los proyectos, las guías, la configuración, las credenciales codificadas y los
+logs se guardan para el usuario actual en:
+
+  %LOCALAPPDATA%\ISC Email Generator
+
+El ZIP no contiene claves, tokens, datos ni configuraciones del equipo que lo
+generó. Para conservar su configuración al actualizar, no elimine esa carpeta.
+
+Problemas de inicio
+-------------------
+El iniciador muestra errores comprensibles. Los detalles quedan en la subcarpeta
+"logs" de la ubicación de datos indicada arriba. Si el puerto 8000 está ocupado,
+cierre el otro proceso o inicie desde una consola con otro puerto:
+
+  set ISC_EMAIL_GENERATOR_PORT=8010
+  "Iniciar app.cmd"
+
+Use el mismo valor al ejecutar "Detener app.cmd".

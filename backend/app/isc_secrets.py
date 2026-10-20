@@ -6,8 +6,10 @@ import re
 import threading
 from pathlib import Path
 
+from .paths import BACKEND_DIR, state_path
 
-ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
+
+ENV_PATH = state_path(".env", development_default=BACKEND_DIR / ".env")
 CONNECTION_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 _write_lock = threading.Lock()
 

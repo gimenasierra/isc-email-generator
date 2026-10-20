@@ -5,8 +5,10 @@ import os
 import threading
 from pathlib import Path
 
+from .paths import BACKEND_DIR, state_path
 
-ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
+
+ENV_PATH = state_path(".env", development_default=BACKEND_DIR / ".env")
 PROVIDER_ENV_KEYS = {
     "gemini": "GEMINI_API_KEY",
     "groq": "GROQ_API_KEY",

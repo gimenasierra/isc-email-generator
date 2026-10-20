@@ -7,12 +7,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .paths import BACKEND_DIR, state_path
 from .velocity import DIRECTIVE_RE, VARIABLE_RE
 
 
-PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+PROMPTS_DIR = BACKEND_DIR / "prompts"
 BASE_RULES_FILE = PROMPTS_DIR / "adaptation_rules.md"
-PROJECT_RULES_DIR = PROMPTS_DIR / "projects"
+PROJECT_RULES_DIR = state_path("prompts", "projects", development_default=PROMPTS_DIR / "projects")
 MAX_GUIDE_BYTES = 100_000
 URL_RE = re.compile(r"(?i)(?:https?://|mailto:)[^\s<>\"')\]]+")
 ENVIRONMENT_RE = re.compile(r"(?i)\b(?:sandbox|producci[oó]n|production|demo|tenant|identitynow|identitynow-demo)\b")

@@ -16,7 +16,27 @@ Funciona en su propia PC o servidor, escucha únicamente en `127.0.0.1` (puerto 
 
 El idioma de destino predeterminado es español neutro. El original importado nunca se altera.
 
+## Distribución portable para Windows x64
+
+El archivo `dist\isc-email-generator-windows-x64.zip` está pensado para usuarios finales: se descomprime completo y se inicia con doble clic en **`Iniciar app.cmd`**. Incluye Python 3.12 x64, todas las dependencias del backend y `frontend/dist`; no requiere instalar Python, Node.js, Rust ni usar permisos de administrador. **`Detener app.cmd`** cierra solamente la instancia validada de la aplicación.
+
+En modo portable, los proyectos, guías, conexiones, credenciales codificadas, PID y logs se guardan en `%LOCALAPPDATA%\ISC Email Generator`. Esto mantiene el paquete libre de datos personales y permite ejecutarlo desde cualquier carpeta, incluso una ruta con espacios o una ubicación de solo lectura. El ZIP incluye `LEEME-PORTABLE.txt` con las instrucciones mínimas.
+
+### Generar el ZIP
+
+La generación se realiza en Windows x64 desde un checkout de desarrollo con Node.js/npm y acceso a internet:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\Empaquetar distribución.ps1"
+```
+
+El script ejecuta `npm ci` y el build del frontend, descarga artefactos fijados de Python 3.12.10 y pip con verificación SHA-256, instala el lock `backend/requirements-portable-win-x64.txt` dentro del runtime embebible y genera el ZIP. Antes de comprimir hace una prueba real desde una ruta con espacios y otro directorio de trabajo: arranca con el Python incluido, consulta `/api/health` y detiene la instancia. Para reutilizar un `frontend/dist` ya verificado puede agregarse `-SkipFrontendBuild`; `-SkipSmokeTest` existe solo para diagnóstico y no se recomienda para una entrega.
+
+El equipo que genera el ZIP sí necesita Node.js y acceso a PyPI/Python.org. El equipo destinatario no descarga ni instala nada.
+
 ## Prerrequisitos
+
+Los siguientes prerrequisitos corresponden al checkout de desarrollo, no al ZIP portable:
 
 - **Python 3.11 o superior** (obligatorio).
 - **Node.js 20 o superior**: necesario solo para la instalación inicial, para compilar el frontend. El repositorio no incluye `frontend/dist`; si copia esa carpeta desde otro equipo, no necesita Node.js.
@@ -62,7 +82,7 @@ cd ..
 - **Iniciar:** doble clic en **`Iniciar app.cmd`**. Levanta la aplicación en segundo plano en `http://127.0.0.1:8000` y abre el navegador. Puede cerrar la ventana del lanzador: la app sigue corriendo. Si ya hay una instancia corriendo, reutiliza esa en lugar de levantar otra.
 - **Detener:** doble clic en **`Detener app.cmd`**. Detiene solamente esa instancia, validando el proceso exacto (PID, Python del entorno y `run.py`); nunca finaliza otro proceso de Python.
 
-Los eventos se registran en `logs\app.log`.
+En desarrollo, los eventos se registran en `logs\app.log`. En el paquete portable quedan en `%LOCALAPPDATA%\ISC Email Generator\logs`, incluidos `inicio.log`, `inicio-salida.log`, `inicio-error.log` y `app.log`.
 
 Para usar otro puerto en una sesión de PowerShell, defínalo antes de iniciar. Use la misma variable al detener:
 
@@ -211,13 +231,16 @@ npm.cmd run build
 
 En Linux use `.venv/bin/python` en lugar de `.venv\Scripts\python.exe` y `npm` en lugar de `npm.cmd`.
 
+El lock `backend/requirements-portable-win-x64.txt` se usa exclusivamente al construir el ZIP y fija también las dependencias transitivas. No reemplaza `backend/requirements.txt` en desarrollo.
+
 ## Estructura del proyecto
 
 - `backend/app/` — API FastAPI; cliente ISC (`isc.py`), publicación (`publication.py`), secretos (`isc_secrets.py`) y proveedores de IA (`providers/`).
 - `backend/prompts/` — contrato técnico de adaptación y guías de estilo por proyecto.
-- `backend/run.py` — arranque compartido por Windows y Linux (log en `logs/app.log`, PID en `.run/app.pid`).
+- `backend/run.py` — arranque compartido por Windows y Linux. En desarrollo usa `logs/` y `.run/`; el lanzador portable los redirige a la ubicación de datos del usuario.
 - `frontend/` — interfaz Vite + React; el build compilado queda en `frontend/dist` (ignorado por Git).
-- `Iniciar app.cmd` / `Detener app.cmd` / `Preparar entorno.cmd` y `Iniciar app.sh` / `Detener app.sh` — lanzadores por plataforma.
+- `Iniciar app.cmd` / `Detener app.cmd` — usan `runtime/python.exe` cuando existe (portable) y `backend/.venv` en desarrollo; `Preparar entorno.cmd` prepara el checkout de Windows. Los scripts `.sh` mantienen el flujo Linux.
+- `Empaquetar distribución.ps1` — construye y valida el ZIP portable Windows x64 sin copiar el `.venv` de desarrollo.
 - `examples/` — notificaciones de ejemplo para probar sin conexión.
 
 ## Documentación de referencia

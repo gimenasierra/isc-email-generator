@@ -5,6 +5,16 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 $OutputEncoding = $utf8
 
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+$portablePython = Join-Path $root 'runtime\python.exe'
+$portableMode = Test-Path -LiteralPath $portablePython -PathType Leaf
+if ($portableMode -and -not $env:ISC_EMAIL_GENERATOR_STATE_DIR) {
+    if (-not $env:LOCALAPPDATA) {
+        Write-Host 'Windows no informó una carpeta LOCALAPPDATA para localizar la instancia portable.' -ForegroundColor Red
+        exit 2
+    }
+    $env:ISC_EMAIL_GENERATOR_STATE_DIR = Join-Path $env:LOCALAPPDATA 'ISC Email Generator'
+}
+$stateRoot = if ($env:ISC_EMAIL_GENERATOR_STATE_DIR) { $env:ISC_EMAIL_GENERATOR_STATE_DIR } else { $root }
 $port = 8000
 if ($env:ISC_EMAIL_GENERATOR_PORT) {
     if (-not [int]::TryParse($env:ISC_EMAIL_GENERATOR_PORT, [ref]$port) -or $port -lt 1 -or $port -gt 65535) {
@@ -13,8 +23,8 @@ if ($env:ISC_EMAIL_GENERATOR_PORT) {
     }
 }
 $pidName = if ($port -eq 8000) { 'app.pid' } else { "app-$port.pid" }
-$pidFile = Join-Path $root ".run\$pidName"
-$pythonPath = Join-Path $root 'backend\.venv\Scripts\python.exe'
+$pidFile = Join-Path $stateRoot ".run\$pidName"
+$pythonPath = if ($portableMode) { $portablePython } else { Join-Path $root 'backend\.venv\Scripts\python.exe' }
 $runnerPath = Join-Path $root 'backend\run.py'
 
 $appPid = 0
@@ -54,6 +64,10 @@ try {
     exit 1
 }
 
+if (-not (Test-Path -LiteralPath $pythonPath -PathType Leaf) -or -not (Test-Path -LiteralPath $runnerPath -PathType Leaf)) {
+    Write-Host 'No se encontraron el Python y el iniciador esperados. No se finalizó ningún proceso.' -ForegroundColor Red
+    exit 1
+}
 $expectedPython = (Resolve-Path -LiteralPath $pythonPath).Path
 $expectedRunner = (Resolve-Path -LiteralPath $runnerPath).Path
 $basePython = (& $expectedPython -c 'import sys; print(sys._base_executable)' 2>$null | Select-Object -First 1).Trim()
