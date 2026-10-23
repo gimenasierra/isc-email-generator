@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-isc_email_generator}
+      POSTGRES_USER: ${POSTGRES_USER:-isc_email_generator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      ISC_EMAIL_GENERATOR_SERVER_MODE: "1"
+      ISC_EMAIL_GENERATOR_SECURE_COOKIES: "1"
+      ISC_EMAIL_GENERATOR_MASTER_KEY: ${ISC_EMAIL_GENERATOR_MASTER_KEY:?Defina ISC_EMAIL_GENERATOR_MASTER_KEY}
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:-isc_email_generator}
+      POSTGRES_USER: ${POSTGRES_USER:-isc_email_generator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8000"
+    volumes:
+      - ./migration:/migracion:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/certs:/etc/nginx/certs:ro
+
+volumes:
+  postgres-data:

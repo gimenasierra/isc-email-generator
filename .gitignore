@@ -7,6 +7,11 @@ backend/**/__pycache__/
 backend/.pytest_cache/
 backend/.pytest_tmp/
 backend/.env
+.env.server
+deploy/certs/*
+!deploy/certs/.gitkeep
+migration/*
+!migration/.gitkeep
 backend/data/*
 !backend/data/.gitkeep
 backend/prompts/projects/*

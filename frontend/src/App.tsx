@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { ApiRequestCancelled, api } from './api'
+import { ApiRequestCancelled, api, setProjectVersion } from './api'
 import type { AIConfig, AIProviderId, BrandingConfig, ISCConnection, ISCConnectionInput, ISCEnvironment, ISCImportResult, ISCTemplateCandidate, ISCTemplateType, LocalImportResult, MappingEntry, Project, ProviderStatus, StyleGuide, TemplateDetail, TemplateSummary, Validation } from './types'
 import { PublicationDialog } from './PublicationDialog'
 import { SafeVisualEditor } from './SafeVisualEditor'
@@ -269,7 +269,7 @@ function App() {
   const configDirty = useMemo(() => Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig)), [config, savedConfig])
   const guideDirty = guideContent !== styleGuide.content || guideFilename !== styleGuide.filename
 
-  const loadProject = async () => { try { const [loaded, guide] = await Promise.all([api.project(PROJECT_ID), api.styleGuide(PROJECT_ID)]); setProject(loaded); setConfig(loaded.config); setSavedConfig(structuredClone(loaded.config)); setStyleGuide(guide); setGuideContent(guide.content); setGuideFilename(guide.filename); setAiConfig(loaded.ai_config); setSavedAIConfig(structuredClone(loaded.ai_config)); if (loaded.templates.length && !selectedIdRef.current) selectTemplate(loaded.templates[0].internal_id) } catch (error) { setMessage({ kind: 'error', text: (error as Error).message }) } }
+  const loadProject = async () => { try { const loaded = await api.project(PROJECT_ID); setProjectVersion(loaded.project_version); const guide = await api.styleGuide(PROJECT_ID); setProject(loaded); setConfig(loaded.config); setSavedConfig(structuredClone(loaded.config)); setStyleGuide(guide); setGuideContent(guide.content); setGuideFilename(guide.filename); setAiConfig(loaded.ai_config); setSavedAIConfig(structuredClone(loaded.ai_config)); if (loaded.templates.length && !selectedIdRef.current) selectTemplate(loaded.templates[0].internal_id) } catch (error) { setMessage({ kind: 'error', text: (error as Error).message }) } }
   const refreshDetailIfSelected = async (targetId: string) => { const loaded = await api.detail(PROJECT_ID, targetId); if (selectedIdRef.current === targetId) { setDetail(loaded); setSubject(loaded.result_subject ?? ''); setBody(loaded.result_body ?? '') } return loaded }
   useEffect(() => { void loadProject() }, [])
   useEffect(() => { void api.iscConnections(PROJECT_ID).then((response) => setISCConnections(response.connections)).catch((error) => setMessage({ kind: 'error', text: (error as Error).message })) }, [])

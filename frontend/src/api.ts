@@ -1,6 +1,14 @@
-import type { AIConfig, BrandingConfig, ISCConnection, ISCConnectionInput, ISCImportResult, ISCQueryResult, ISCTemplateType, LocalImportResult, Project, ProviderStatus, PublicationBatchPrepareItem, PublicationRecord, StyleGuide, TemplateDetail, TemplateSummary } from './types'
+import type { AIConfig, AuthUser, BrandingConfig, ISCConnection, ISCConnectionInput, ISCImportResult, ISCQueryResult, ISCTemplateType, LocalImportResult, Project, ProviderStatus, PublicationBatchPrepareItem, PublicationRecord, StyleGuide, TemplateDetail, TemplateSummary } from './types'
 
 type ApiOptions = RequestInit & { timeoutMs?: number }
+let projectVersion: number | null = null
+let styleGuideVersion: number | null = null
+
+export function setProjectVersion(version: number | null) { projectVersion = version }
+
+function cookie(name: string): string {
+  return document.cookie.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1) ?? ''
+}
 
 export class ApiRequestCancelled extends Error {
   constructor() { super('Solicitud cancelada.'); this.name = 'ApiRequestCancelled' }
@@ -39,8 +47,14 @@ async function fetchResponse(url: string, options: ApiOptions = {}): Promise<Res
   try {
     response = await fetch(url, {
       ...fetchOptions,
+      credentials: 'same-origin',
       signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', ...(fetchOptions.headers ?? {}) },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(fetchOptions.method && !['GET', 'HEAD'].includes(fetchOptions.method) ? { 'X-CSRF-Token': decodeURIComponent(cookie('isc_email_generator_csrf')) } : {}),
+        ...(projectVersion !== null && fetchOptions.method && !['GET', 'HEAD'].includes(fetchOptions.method) ? { 'X-Project-Version': String(projectVersion) } : {}),
+        ...(fetchOptions.headers ?? {}),
+      },
     })
   } catch (error) {
     if (controller.signal.aborted) {
@@ -57,8 +71,11 @@ async function fetchResponse(url: string, options: ApiOptions = {}): Promise<Res
   }
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ detail: response.statusText }))
+    if (response.status === 401) window.dispatchEvent(new Event('isc-auth-required'))
     throw new Error(formatApiErrorDetail(payload.detail, response.statusText || 'Ocurrió un error inesperado.'))
   }
+  const nextVersion = response.headers.get('X-Project-Version')
+  if (nextVersion !== null && /^\d+$/.test(nextVersion)) projectVersion = Number(nextVersion)
   return response
 }
 
@@ -80,7 +97,16 @@ async function download(url: string, filename: string): Promise<void> {
 }
 
 export const api = {
-  project: (projectId: string) => request<Project>(`/api/projects/${projectId}`),
+  health: () => request<{ status: string; server_mode?: boolean }>('/api/health'),
+  me: () => request<{ user: AuthUser }>('/api/auth/me'),
+  login: (username: string, password: string) => request<{ user: AuthUser; csrf_token: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+  changePassword: (currentPassword: string, newPassword: string) => request<{ ok: boolean; reauthenticate: boolean }>('/api/auth/change-password', { method: 'POST', body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }),
+  users: () => request<{ users: AuthUser[] }>('/api/admin/users'),
+  createUser: (username: string, temporaryPassword: string, role: 'admin' | 'user') => request<{ user: AuthUser }>('/api/admin/users', { method: 'POST', body: JSON.stringify({ username, temporary_password: temporaryPassword, role }) }),
+  resetUserPassword: (userId: string, temporaryPassword: string) => request<{ ok: boolean }>(`/api/admin/users/${userId}/reset-password`, { method: 'POST', body: JSON.stringify({ temporary_password: temporaryPassword }) }),
+  setUserActive: (userId: string, active: boolean) => request<{ ok: boolean }>(`/api/admin/users/${userId}/active`, { method: 'PUT', body: JSON.stringify({ active }) }),
+  project: async (projectId: string) => { const project = await request<Project>(`/api/projects/${projectId}`); setProjectVersion(project.project_version); return project },
   import: (projectId: string, filename: string, data: unknown) =>
     request<LocalImportResult>(`/api/projects/${projectId}/import`, {
       method: 'POST',
@@ -110,11 +136,11 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(config),
     }),
-  styleGuide: (projectId: string) => request<StyleGuide>(`/api/projects/${projectId}/style-guide`),
+  styleGuide: async (projectId: string) => { const guide = await request<StyleGuide>(`/api/projects/${projectId}/style-guide`); styleGuideVersion = guide.version ?? 0; return guide },
   saveStyleGuide: (projectId: string, content: string, filename: string) =>
-    request<StyleGuide>(`/api/projects/${projectId}/style-guide`, { method: 'PUT', body: JSON.stringify({ content, filename }) }),
+    request<StyleGuide>(`/api/projects/${projectId}/style-guide`, { method: 'PUT', headers: styleGuideVersion === null ? {} : { 'X-Style-Guide-Version': String(styleGuideVersion) }, body: JSON.stringify({ content, filename }) }).then((guide) => { styleGuideVersion = guide.version ?? null; return guide }),
   deleteStyleGuide: (projectId: string) =>
-    request<StyleGuide>(`/api/projects/${projectId}/style-guide`, { method: 'DELETE' }),
+    request<StyleGuide>(`/api/projects/${projectId}/style-guide`, { method: 'DELETE', headers: styleGuideVersion === null ? {} : { 'X-Style-Guide-Version': String(styleGuideVersion) } }).then((guide) => { styleGuideVersion = guide.version ?? null; return guide }),
   saveAIConfig: (projectId: string, config: AIConfig, apiKey: string) =>
     request<{ ai_config: AIConfig; provider: ProviderStatus }>(`/api/projects/${projectId}/ai-config`, {
       method: 'PUT',

@@ -38,6 +38,7 @@ export type StyleGuide = {
   updated_at: string | null
   hash: string
   warnings: string[]
+  version?: number
 }
 
 export type TemplateSummary = {
@@ -199,9 +200,18 @@ export type PublicationBatchPrepareItem = {
 
 export type Project = {
   project_id: string
+  project_version: number
   filename: string
   config: BrandingConfig
   ai_config: AIConfig
   templates: TemplateSummary[]
   provider: ProviderStatus
+}
+
+export type AuthUser = {
+  id: string
+  username: string
+  role: 'admin' | 'user'
+  active: boolean
+  must_change_password: boolean
 }

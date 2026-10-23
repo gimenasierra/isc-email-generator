@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 
 from .paths import BACKEND_DIR, state_path
+from . import server_runtime
 
 
 ENV_PATH = state_path(".env", development_default=BACKEND_DIR / ".env")
@@ -50,6 +51,12 @@ def _file_values(path: Path) -> dict[str, str]:
 
 
 def get_credentials(connection_id: str, path: Path | None = None) -> tuple[str, str]:
+    if server_runtime.enabled() and path is None:
+        _keys(connection_id)
+        return (
+            server_runtime.get_secret("isc", f"{connection_id}:client_id"),
+            server_runtime.get_secret("isc", f"{connection_id}:client_secret"),
+        )
     client_key, secret_key = _keys(connection_id)
     values = _file_values(path or ENV_PATH)
     encoded_client = os.environ.get(client_key, values.get(client_key, ""))
@@ -68,6 +75,16 @@ def set_credentials(connection_id: str, client_id: str, client_secret: str, path
 
 
 def _set_credentials_unlocked(connection_id: str, client_id: str, client_secret: str, path: Path | None = None) -> None:
+    if server_runtime.enabled() and path is None:
+        _keys(connection_id)
+        existing_client, existing_secret = get_credentials(connection_id)
+        final_client = client_id.strip() or existing_client
+        final_secret = client_secret or existing_secret
+        if not final_client or not final_secret:
+            raise ISCSecretError("Ingresá Client ID y Client Secret para guardar la conexión.")
+        server_runtime.set_secret("isc", f"{connection_id}:client_id", final_client)
+        server_runtime.set_secret("isc", f"{connection_id}:client_secret", final_secret)
+        return
     target = path or ENV_PATH
     client_key, secret_key = _keys(connection_id)
     existing_client, existing_secret = get_credentials(connection_id, target)
@@ -105,6 +122,11 @@ def delete_credentials(connection_id: str, path: Path | None = None) -> None:
 
 
 def _delete_credentials_unlocked(connection_id: str, path: Path | None = None) -> None:
+    if server_runtime.enabled() and path is None:
+        _keys(connection_id)
+        server_runtime.delete_secret("isc", f"{connection_id}:client_id")
+        server_runtime.delete_secret("isc", f"{connection_id}:client_secret")
+        return
     target = path or ENV_PATH
     client_key, secret_key = _keys(connection_id)
     secret_keys = {client_key, secret_key}

@@ -2,16 +2,19 @@ from __future__ import annotations
 
 from copy import deepcopy
 from collections import Counter
+from contextlib import asynccontextmanager
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from .isc import ISCError, isc_client, normalize_api_base_url, utc_now_iso
 from .date_translation import SUPPORTED_DATE_VARIABLES, is_spanish, prepare_spanish_date_body, restore_spanish_date_body
@@ -38,16 +41,201 @@ from .store import (
     is_config_outdated,
 )
 from .velocity import validate_velocity
+from . import server_runtime
 
 
-app = FastAPI(title="ISC Email Generator API", version="0.1.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    server_runtime.initialize()
+    yield
+
+
+app = FastAPI(title="ISC Email Generator API", version="0.1.0", lifespan=lifespan)
+if not server_runtime.enabled():
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=12)
+
+
+class AdminUserCreateRequest(BaseModel):
+    username: str
+    temporary_password: str = Field(min_length=12)
+    role: str = "user"
+
+
+class AdminPasswordResetRequest(BaseModel):
+    temporary_password: str = Field(min_length=12)
+
+
+class AdminActiveRequest(BaseModel):
+    active: bool
+
+
+def _secure_cookies() -> bool:
+    return os.getenv("ISC_EMAIL_GENERATOR_SECURE_COOKIES", "1").strip() != "0"
+
+
+def _require_admin(request: Request) -> dict:
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Se requiere un usuario administrador.")
+    return user
+
+
+@app.middleware("http")
+async def server_authentication(request: Request, call_next):
+    if not server_runtime.enabled() or not request.url.path.startswith("/api/"):
+        return await call_next(request)
+    if request.url.path in {"/api/health", "/api/auth/login"}:
+        return await call_next(request)
+    raw_session = request.cookies.get(server_runtime.SESSION_COOKIE, "")
+    user = server_runtime.session_user(raw_session)
+    if not user:
+        return JSONResponse(status_code=401, content={"detail": "La sesión no está autenticada o venció."})
+    allowed_during_password_change = {"/api/auth/me", "/api/auth/logout", "/api/auth/change-password"}
+    if user["must_change_password"] and request.url.path not in allowed_during_password_change:
+        return JSONResponse(status_code=403, content={"detail": "Debe cambiar la contraseña temporal antes de continuar.", "code": "password_change_required"})
+    if request.method not in {"GET", "HEAD", "OPTIONS"} and not server_runtime.validate_csrf(raw_session, request.headers.get("X-CSRF-Token", "")):
+        return JSONResponse(status_code=403, content={"detail": "La validación CSRF falló."})
+    request.state.user = user
+    user_context = server_runtime.current_user_id.set(user["id"])
+    expected_context = server_runtime.expected_project_version.set(None)
+    saved_context = server_runtime.saved_project_version.set(None)
+    style_context = server_runtime.expected_style_guide_version.set(None)
+    request_metadata: dict[str, int] = {}
+    metadata_context = server_runtime.request_metadata.set(request_metadata)
+    version_header = request.headers.get("X-Project-Version", "").strip()
+    if version_header:
+        try:
+            server_runtime.expected_project_version.set(int(version_header))
+        except ValueError:
+            server_runtime.current_user_id.reset(user_context)
+            server_runtime.expected_project_version.reset(expected_context)
+            server_runtime.saved_project_version.reset(saved_context)
+            server_runtime.expected_style_guide_version.reset(style_context)
+            server_runtime.request_metadata.reset(metadata_context)
+            return JSONResponse(status_code=400, content={"detail": "X-Project-Version no es válido."})
+    style_header = request.headers.get("X-Style-Guide-Version", "").strip()
+    if style_header:
+        try:
+            server_runtime.expected_style_guide_version.set(int(style_header))
+        except ValueError:
+            server_runtime.current_user_id.reset(user_context)
+            server_runtime.expected_project_version.reset(expected_context)
+            server_runtime.saved_project_version.reset(saved_context)
+            server_runtime.expected_style_guide_version.reset(style_context)
+            server_runtime.request_metadata.reset(metadata_context)
+            return JSONResponse(status_code=400, content={"detail": "X-Style-Guide-Version no es válido."})
+    try:
+        response = await call_next(request)
+        saved_version = request_metadata.get("saved_project_version")
+        if saved_version is not None:
+            response.headers["X-Project-Version"] = str(saved_version)
+        if request.method not in {"GET", "HEAD", "OPTIONS"} and response.status_code < 400:
+            server_runtime.audit("api.mutation", {"method": request.method, "path": request.url.path})
+        return response
+    finally:
+        server_runtime.current_user_id.reset(user_context)
+        server_runtime.expected_project_version.reset(expected_context)
+        server_runtime.saved_project_version.reset(saved_context)
+        server_runtime.expected_style_guide_version.reset(style_context)
+        server_runtime.request_metadata.reset(metadata_context)
+
+
+@app.exception_handler(server_runtime.ConcurrentUpdateError)
+def concurrent_update_error(_request: Request, exc: server_runtime.ConcurrentUpdateError):
+    return JSONResponse(status_code=409, content={"detail": str(exc), "code": "concurrent_update"})
+
+
+@app.exception_handler(server_runtime.SecretUnavailableError)
+def secret_unavailable_error(_request: Request, exc: server_runtime.SecretUnavailableError):
+    return JSONResponse(status_code=503, content={"detail": str(exc), "code": "secrets_locked"})
+
+
+@app.post("/api/auth/login")
+def login(payload: LoginRequest, response: Response):
+    try:
+        user, token, csrf = server_runtime.authenticate(payload.username, payload.password)
+    except server_runtime.AuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    response.set_cookie(server_runtime.SESSION_COOKIE, token, httponly=True, secure=_secure_cookies(), samesite="lax", max_age=server_runtime.SESSION_HOURS * 3600, path="/")
+    response.set_cookie(server_runtime.CSRF_COOKIE, csrf, httponly=False, secure=_secure_cookies(), samesite="lax", max_age=server_runtime.SESSION_HOURS * 3600, path="/")
+    return {"user": user, "csrf_token": csrf}
+
+
+@app.get("/api/auth/me")
+def authenticated_user(request: Request):
+    return {"user": request.state.user}
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: Response):
+    server_runtime.logout(request.cookies.get(server_runtime.SESSION_COOKIE, ""))
+    response.delete_cookie(server_runtime.SESSION_COOKIE, path="/")
+    response.delete_cookie(server_runtime.CSRF_COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.post("/api/auth/change-password")
+def change_password(request: Request, payload: PasswordChangeRequest, response: Response):
+    try:
+        server_runtime.change_password(request.state.user["id"], payload.current_password, payload.new_password)
+    except server_runtime.AuthenticationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    response.delete_cookie(server_runtime.SESSION_COOKIE, path="/")
+    response.delete_cookie(server_runtime.CSRF_COOKIE, path="/")
+    return {"ok": True, "reauthenticate": True}
+
+
+@app.get("/api/admin/users")
+def list_users(request: Request):
+    _require_admin(request)
+    return {"users": server_runtime.admin_list_users()}
+
+
+@app.post("/api/admin/users")
+def create_user(request: Request, payload: AdminUserCreateRequest):
+    _require_admin(request)
+    try:
+        return {"user": server_runtime.create_user(payload.username, payload.temporary_password, payload.role, True)}
+    except server_runtime.AuthenticationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/admin/users/{user_id}/reset-password")
+def reset_user_password(user_id: str, request: Request, payload: AdminPasswordResetRequest):
+    _require_admin(request)
+    try:
+        server_runtime.admin_reset_password(user_id, payload.temporary_password)
+    except server_runtime.AuthenticationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@app.put("/api/admin/users/{user_id}/active")
+def set_user_active(user_id: str, request: Request, payload: AdminActiveRequest):
+    actor = _require_admin(request)
+    if user_id == actor["id"] and not payload.active:
+        raise HTTPException(status_code=400, detail="No puede desactivar su propia cuenta.")
+    try:
+        server_runtime.admin_set_active(user_id, payload.active)
+    except server_runtime.AuthenticationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True}
 
 
 def safe_download_filename(value: object, fallback: str) -> str:
@@ -119,7 +307,7 @@ async def isc_error_handler(_, exc: ISCError):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "runtime_signature": RUNTIME_SIGNATURE}
+    return {"status": "ok", "runtime_signature": RUNTIME_SIGNATURE, "server_mode": server_runtime.enabled(), "secrets_available": server_runtime.secrets_available()}
 
 
 def ai_status(project_id: str, settings: AIConfig):
@@ -175,6 +363,7 @@ def get_project(project_id: str):
     project = load_project(project_id)
     return {
         "project_id": project["project_id"],
+        "project_version": int(project.get("project_version", 0)),
         "filename": project.get("filename", ""),
         "config": project["config"],
         "templates": [summary(item, project["config"], project["ai_config"], project_style_hash(project)).model_dump() for item in project["items"]],

@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 
 from .paths import BACKEND_DIR, state_path
+from . import server_runtime
 
 
 ENV_PATH = state_path(".env", development_default=BACKEND_DIR / ".env")
@@ -52,6 +53,9 @@ def _decode(value: str) -> str:
 
 
 def get_persistent_key(provider_id: str, path: Path | None = None) -> str:
+    if server_runtime.enabled() and path is None:
+        _keys(provider_id)
+        return server_runtime.get_secret("ai", provider_id)
     raw_key, encoded_key = _keys(provider_id)
     target = path or ENV_PATH
     values = _file_values(target)
@@ -65,6 +69,10 @@ def get_persistent_key(provider_id: str, path: Path | None = None) -> str:
 def set_persistent_key(provider_id: str, api_key: str, path: Path | None = None) -> None:
     value = api_key.strip()
     if not value:
+        return
+    if server_runtime.enabled() and path is None:
+        _keys(provider_id)
+        server_runtime.set_secret("ai", provider_id, value)
         return
     _, encoded_key = _keys(provider_id)
     encoded_value = base64.b64encode(value.encode("utf-8")).decode("ascii")
