@@ -291,6 +291,24 @@ def publish_prepared(
         save_project(project_id, project)
         raise ISCError("La adaptación, la configuración o la conexión cambió desde la preparación. Prepará nuevamente.", 409)
 
+    # A retry must never issue a second POST for the same reviewed payload.
+    # Pending/uncertain writes are resolved through the verification endpoint.
+    duplicate = next(
+        (
+            record
+            for record in reversed(item.get("publication_history", []))
+            if record.get("connection", {}).get("id") == connection.get("id")
+            and record.get("local_signature") == preparation.get("local_signature")
+            and record.get("status") in {"published_pending_verification", "published_verified", "published_with_differences", "result_unconfirmed"}
+        ),
+        None,
+    )
+    if duplicate:
+        raise ISCError(
+            "Esta versión ya tiene una publicación aceptada o incierta para el tenant. Usá Volver a comprobar; no se realizó otro POST.",
+            409,
+        )
+
     identity = preparation["identity"]
     current_mode, current_destination = resolve_destination(
         client,
@@ -374,6 +392,33 @@ def publish_prepared(
         "differences": differences,
         "message": uncertain_reason,
     }
+    try:
+        from . import server_runtime
+
+        if server_runtime.enabled():
+            record["published_by"] = server_runtime.require_user_id()
+            record["payload_hash"] = canonical_hash(preparation["payload"])
+            record["idempotency_key"] = canonical_hash(
+                {
+                    "user": record["published_by"],
+                    "tenant": connection.get("api_base_url"),
+                    "identity": identity,
+                    "payload_hash": record["payload_hash"],
+                }
+            )
+            server_runtime.audit(
+                "isc.published",
+                {
+                    "connection_id": connection.get("id"),
+                    "tenant": connection.get("api_base_url"),
+                    "identity": identity,
+                    "payload_hash": record["payload_hash"],
+                    "status": status,
+                },
+                project_key=project_id,
+            )
+    except ImportError:
+        pass
     item.setdefault("publication_history", []).append(record)
     item["publication_preparation"] = None
     save_project(project_id, project)

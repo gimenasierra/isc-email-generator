@@ -265,6 +265,18 @@ def test_successful_post_without_readback_reports_the_created_id():
     assert verified["verification"]["id"] == "created-id"
 
 
+def test_same_published_payload_cannot_issue_a_second_post():
+    local_item = item()
+    client = FakeISC(default=[template(identifier="default-id")])
+    prepared = prepare_item(local_item, CONFIG, CONNECTION, client)
+    publish_prepared("p", project(local_item), local_item, CONNECTION, prepared["preparation_id"], client, saver([]))
+    assert len(client.posts) == 1
+    prepared_again = prepare_item(local_item, CONFIG, CONNECTION, client)
+    with pytest.raises(ISCError, match="Volver a comprobar"):
+        publish_prepared("p", project(local_item), local_item, CONNECTION, prepared_again["preparation_id"], client, saver([]))
+    assert len(client.posts) == 1
+
+
 def test_successful_post_is_verified_by_direct_id_when_collection_omits_it():
     class DirectlyVisibleISC(FakeISC):
         def find_template_matches(self, connection, template_type, key, medium, locale):
