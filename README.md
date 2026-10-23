@@ -16,6 +16,64 @@ Funciona en su propia PC o servidor, escucha únicamente en `127.0.0.1` (puerto 
 
 El idioma de destino predeterminado es español neutro. El original importado nunca se altera.
 
+## Servidor multiusuario en Ubuntu
+
+El modo servidor es adicional al uso local y portable. Aísla los datos y secretos de cada usuario y se despliega con PostgreSQL y Nginx:
+
+1. Copie `.env.server.example` a `.env.server` y reemplace las dos claves.
+2. Coloque el certificado corporativo en `deploy/certs/server.crt` y su clave en `deploy/certs/server.key`.
+3. Inicie los servicios con `docker compose --env-file .env.server up -d --build`.
+4. Cree el primer administrador de forma interactiva:
+
+```bash
+docker compose --env-file .env.server exec app python -m app.admin_cli create-admin --username administrador
+```
+
+La contraseña inicial es temporal. Hasta cambiarla, esa cuenta solamente puede consultar su sesión, cambiar la contraseña o cerrar sesión. Las cuentas posteriores se crean desde los endpoints administrativos; no existe autorregistro.
+
+FastAPI no se publica directamente: Nginx es el único servicio expuesto y requiere HTTPS. La VM debe quedar limitada a la red o VPN corporativa. Los proyectos, guías, conexiones y publicaciones pertenecen al usuario autenticado. Las API keys y credenciales ISC se cifran antes de guardarse y nunca regresan al navegador.
+
+### Clave maestra y respaldos
+
+`ISC_EMAIL_GENERATOR_MASTER_KEY` debe generarse una vez y guardarse fuera de la VM y fuera del respaldo de PostgreSQL, en el gestor de secretos corporativo. Puede generarse con:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+El servidor conserva un verificador cifrado. Si se inicia con otra clave, bloquea el acceso a los secretos y no los sobrescribe. Para que un respaldo sea recuperable se necesitan conjuntamente:
+
+- el dump de PostgreSQL;
+- la misma clave maestra;
+- el certificado HTTPS y su clave, custodiados según la política corporativa.
+
+Ejemplo de respaldo de base:
+
+```bash
+docker compose --env-file .env.server exec -T db pg_dump -U isc_email_generator isc_email_generator > respaldo.sql
+```
+
+La rotación de la clave debe implementarse como una operación administrativa controlada de descifrado y recifrado; nunca se cambia directamente en `.env.server` con secretos existentes.
+
+### Migración del proyecto local
+
+Copie temporalmente `default.json` y, si corresponde, `default.md` dentro de `migration/`. Esa carpeta se monta como solo lectura. La simulación es obligatoria y no escribe datos:
+
+```bash
+docker compose --env-file .env.server exec app python -m app.admin_cli migrate-local \
+  --source /migracion/default.json --guide /migracion/default.md --username usuario
+```
+
+El reporte muestra cantidades, exclusiones y un `confirmation_hash`. Después de revisarlo, monte los archivos como solo lectura y repita con:
+
+```bash
+docker compose --env-file .env.server exec app python -m app.admin_cli migrate-local \
+  --source /migracion/default.json --guide /migracion/default.md --username usuario \
+  --apply --confirm-hash HASH_DEL_REPORTE
+```
+
+No se importan `.env`, API keys, credenciales ISC, tokens, sesiones, preparaciones de publicación ni estados transitorios. La fuente local nunca se modifica.
+
 ## Distribución portable para Windows x64
 
 El archivo `dist\isc-email-generator-windows-x64.zip` está pensado para usuarios finales: se descomprime completo y se inicia con doble clic en **`Iniciar app.cmd`**. Incluye Python 3.12 x64, todas las dependencias del backend y `frontend/dist`; no requiere instalar Python, Node.js, Rust ni usar permisos de administrador. **`Detener app.cmd`** cierra solamente la instancia validada de la aplicación.

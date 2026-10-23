@@ -1,0 +1,13 @@
+.git
+.env*
+backend/.env
+backend/.venv
+backend/data
+backend/.pytest_cache
+backend/**/__pycache__
+frontend/node_modules
+frontend/dist
+logs
+dist
+deploy/certs/*.key
+deploy/certs/*.crt
