@@ -9,6 +9,7 @@ from typing import Any
 
 from .paths import BACKEND_DIR, state_path
 from .velocity import DIRECTIVE_RE, VARIABLE_RE
+from . import server_runtime
 
 
 PROMPTS_DIR = BACKEND_DIR / "prompts"
@@ -82,6 +83,20 @@ def _metadata(path: Path) -> dict[str, Any]:
 
 
 def get_style_guide(project_id: str) -> dict[str, Any]:
+    if server_runtime.enabled():
+        stored = server_runtime.get_style_guide_state(_safe_project_id(project_id))
+        if not stored:
+            return {"configured": False, "content": "", "filename": "", "updated_at": None, "hash": "", "warnings": [], "version": 0}
+        content = stored["content"]
+        return {
+            "configured": True,
+            "content": content,
+            "filename": stored["filename"],
+            "updated_at": stored["updated_at"],
+            "hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            "warnings": style_guide_warnings(content),
+            "version": int(stored["version"]),
+        }
     guide_path, metadata_path = _guide_paths(project_id)
     if not guide_path.is_file():
         return {"configured": False, "content": "", "filename": "", "updated_at": None, "hash": "", "warnings": []}
@@ -109,6 +124,9 @@ def save_style_guide(project_id: str, content: str, filename: str = "") -> dict[
     clean_filename = Path(filename.strip()).name if filename.strip() else "guia-estilo.md"
     if Path(clean_filename).suffix.casefold() not in {".md", ".markdown"}:
         raise PromptRulesError("La guía debe ser un archivo Markdown (.md o .markdown).")
+    if server_runtime.enabled():
+        server_runtime.save_style_guide_state(_safe_project_id(project_id), content, clean_filename)
+        return get_style_guide(project_id)
     guide_path, metadata_path = _guide_paths(project_id)
     PROJECT_RULES_DIR.mkdir(parents=True, exist_ok=True)
     updated_at = datetime.now(timezone.utc).isoformat()
@@ -122,6 +140,9 @@ def save_style_guide(project_id: str, content: str, filename: str = "") -> dict[
 
 
 def delete_style_guide(project_id: str) -> dict[str, Any]:
+    if server_runtime.enabled():
+        server_runtime.delete_style_guide_state(_safe_project_id(project_id))
+        return get_style_guide(project_id)
     guide_path, metadata_path = _guide_paths(project_id)
     guide_path.unlink(missing_ok=True)
     metadata_path.unlink(missing_ok=True)

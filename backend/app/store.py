@@ -13,6 +13,7 @@ from .models import AIConfig, BrandingConfig, TemplateSummary
 from .paths import BACKEND_DIR, state_path
 from .prompt_rules import get_style_guide
 from .velocity import validate_velocity
+from . import server_runtime
 
 
 DATA_DIR = state_path("data", development_default=BACKEND_DIR / "data")
@@ -37,9 +38,14 @@ def _path(project_id: str) -> Path:
 
 def load_project(project_id: str) -> dict[str, Any]:
     path = _path(project_id)
-    if not path.exists():
-        return {"project_id": safe_project_id(project_id), "filename": "", "config": BrandingConfig().model_dump(), "ai_config": AIConfig().model_dump(), "isc_connections": [], "items": []}
-    project = json.loads(path.read_text(encoding="utf-8"))
+    empty = {"project_id": safe_project_id(project_id), "filename": "", "config": BrandingConfig().model_dump(), "ai_config": AIConfig().model_dump(), "isc_connections": [], "items": []}
+    if server_runtime.enabled():
+        project, version = server_runtime.load_project_state(safe_project_id(project_id), empty)
+        project["project_version"] = version
+    elif not path.exists():
+        return empty
+    else:
+        project = json.loads(path.read_text(encoding="utf-8"))
     raw_config = project.get("config", {})
     legacy_reference = isinstance(raw_config, dict) and raw_config.get("mode") == "reference"
     project["config"] = BrandingConfig.model_validate(raw_config).model_dump()
@@ -87,6 +93,11 @@ def load_project(project_id: str) -> dict[str, Any]:
 
 
 def save_project(project_id: str, project: dict[str, Any]) -> None:
+    if server_runtime.enabled():
+        clean = deepcopy(project)
+        clean.pop("project_version", None)
+        project["project_version"] = server_runtime.save_project_state(safe_project_id(project_id), clean)
+        return
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     path = _path(project_id)
     temporary = path.with_suffix(".tmp")
